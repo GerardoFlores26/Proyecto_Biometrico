@@ -2,191 +2,185 @@ package com.proyecto;
 
 import javax.swing.*;
 import java.awt.*;
-import java.sql.*;
-import java.time.LocalTime;
-import java.util.HashMap;
+import java.io.FileInputStream;
+import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
+/**
+ * VISTA DEL KIOSKO (GUI DE PANTALLA DE AULA)
+ * Ventana diseñada para terminales empotradas (ej. Raspberry Pi con pantalla táctil).
+ * Ejecuta hilos independientes en segundo plano para emular el escaneo constante del hardware.
+ */
 public class MainKiosko extends JFrame {
+    // Vinculación directa con el procesador lógico del Kiosko
+    private KioskoController controlador = new KioskoController();
+    
+    // Parámetro dinámico modificado mediante archivo externo local
     private String SALON_ACTUAL = "AULA GENERAL"; 
+    // Memoria caché para evitar sobrecargar a Supabase con peticiones concurrentes por segundo
+    private Map<String, List<String[]>> cacheHorarios; 
 
-    private JLabel lblStatus, lblMessage, lblUser, lblLogo, lblConsejo;
-    private JPanel pnlMain;
-    
-    // Guardamos: huella -> [matricula, hora_inicio, salon, materia]
-    private Map<String, java.util.List<String[]>> cacheHorarios = new HashMap<>(); 
-    
-    private Color azulPrincipal = new Color(20, 80, 160);
-    private Color fondoBlanco = new Color(255, 255, 255);
-    private Color verdeExito = new Color(46, 204, 113);
-    private Color rojoError = new Color(231, 76, 60);
+    private JLabel lblStatus, lblUser, lblLogo, lblConsejo;
 
     public MainKiosko() {
-        cargarConfiguracionLocal();
+        // 1. Cargamos el archivo físico 'config.properties' para saber qué aula es esta terminal
+        cargarConfiguracionArchivoLocal();
+        // 2. Bajamos los horarios escolares completos a la RAM de la Raspberry Pi
+        cacheHorarios = controlador.descargarMatrizHorarios();
 
-        setTitle("Terminal Kiosko de Aula - " + SALON_ACTUAL);
+        // Inicialización básica del entorno de interfaz
+        setTitle("Terminal Kiosko Escolar - Aula " + SALON_ACTUAL);
         setSize(800, 580); 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
+        getContentPane().setBackground(Color.WHITE);
+        setLayout(new BorderLayout(10, 10));
 
-        pnlMain = new JPanel(new BorderLayout(10, 10));
-        pnlMain.setBackground(fondoBlanco);
-        
-        // --- LOGO EN ALTA DEFINICIÓN ---
+        // CONSTRUCCIÓN RENDERIZADA DEL LOGO INSTITUCIONAL
         lblLogo = new JLabel("", SwingConstants.CENTER);
         try {
-            ImageIcon iconoOriginal = new ImageIcon("logo.png");
-            Image imgOriginal = iconoOriginal.getImage();
-            int anchoOriginal = iconoOriginal.getIconWidth();
-            int altoOriginal = iconoOriginal.getIconHeight();
-            if (anchoOriginal > 0) {
-                int nuevoAncho = 260; 
-                int nuevoAlto = (altoOriginal * nuevoAncho) / anchoOriginal;
-                java.awt.image.BufferedImage imgModificada = new java.awt.image.BufferedImage(nuevoAncho, nuevoAlto, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-                Graphics2D g2 = imgModificada.createGraphics();
+            ImageIcon icono = new ImageIcon("logo.png");
+            if (icono.getIconWidth() > 0) {
+                // Algoritmo matemático para escalar proporcionalmente la imagen usando interpolación bicúbica de alta calidad
+                int nAncho = 260; int nAlto = (icono.getIconHeight() * nAncho) / icono.getIconWidth();
+                java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(nAncho, nAlto, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g2 = img.createGraphics();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-                g2.drawImage(imgOriginal, 0, 0, nuevoAncho, nuevoAlto, null);
-                g2.dispose();
-                lblLogo.setIcon(new ImageIcon(imgModificada));
-                lblLogo.setBorder(BorderFactory.createEmptyBorder(15, 0, 10, 0)); 
+                g2.drawImage(icono.getImage(), 0, 0, nAncho, nAlto, null); g2.dispose();
+                lblLogo.setIcon(new ImageIcon(img));
             }
-        } catch (Exception e) { lblLogo.setText("[ LOGO ]"); }
-        
-        lblStatus = new JLabel("POR FAVOR COLOQUE SU HUELLA", SwingConstants.CENTER);
-        lblStatus.setFont(new Font("Segoe UI", Font.BOLD, 30));
-        lblStatus.setForeground(azulPrincipal);
+        } catch (Exception e) { lblLogo.setText("[ LOGO UNIVERSIDAD ]"); }
+        add(lblLogo, BorderLayout.NORTH);
 
-        JPanel pnlCenter = new JPanel(new GridLayout(3, 1));
-        pnlCenter.setOpaque(false);
-        
-        lblMessage = new JLabel("Control de Horarios Dinámicos - " + SALON_ACTUAL, SwingConstants.CENTER);
-        lblMessage.setFont(new Font("Segoe UI", Font.PLAIN, 18));
-        lblMessage.setForeground(Color.GRAY);
-        
+        // Paneles Informativos Centrales
+        JPanel pnlCentro = new JPanel(new GridLayout(2, 1)); pnlCentro.setOpaque(false);
+        JLabel lblMeta = new JLabel("Chequeo de Asistencia - " + SALON_ACTUAL, SwingConstants.CENTER);
+        lblMeta.setFont(new Font("Segoe UI", Font.PLAIN, 18)); lblMeta.setForeground(Color.GRAY);
         lblUser = new JLabel("", SwingConstants.CENTER);
         lblUser.setFont(new Font("Segoe UI", Font.BOLD, 32));
-        lblUser.setForeground(azulPrincipal);
+        lblUser.setForeground(new Color(20, 80, 160));
+        pnlCentro.add(lblMeta); pnlCentro.add(lblUser);
+        add(pnlCentro, BorderLayout.CENTER);
+
+        // Sección Inferior de Mensajería y Alertas
+        JPanel pnlInferior = new JPanel(new GridLayout(2, 1, 5, 5)); pnlInferior.setOpaque(false);
+        lblStatus = new JLabel("POR FAVOR COLOQUE SU HUELLA", SwingConstants.CENTER);
+        lblStatus.setFont(new Font("Segoe UI", Font.BOLD, 28));
+        lblStatus.setForeground(new Color(20, 80, 160));
         
-        pnlCenter.add(lblMessage);
-        pnlCenter.add(lblUser);
+        // REQUISITO PREVENTIVO: Leyenda inferior fija para mitigar atascos y fallos del sensor físico
+        lblConsejo = new JLabel("💡 Recomendación preventiva: Si el lector falla, limpia suavemente la superficie e intenta de nuevo.", SwingConstants.CENTER);
+        lblConsejo.setFont(new Font("Segoe UI", Font.ITALIC, 13)); lblConsejo.setForeground(Color.DARK_GRAY);
+        
+        pnlInferior.add(lblStatus); pnlInferior.add(lblConsejo);
+        add(pnlInferior, BorderLayout.SOUTH);
 
-        // NUEVO: Recomendación de limpieza de huella
-        lblConsejo = new JLabel("💡 Nota: Si el sensor no reconoce tu huella, límpiala suavemente e inténtalo de nuevo.", SwingConstants.CENTER);
-        lblConsejo.setFont(new Font("Segoe UI", Font.ITALIC, 13));
-        lblConsejo.setForeground(Color.DARK_GRAY);
-
-        JPanel pnlInferior = new JPanel(new GridLayout(2, 1, 5, 5));
-        pnlInferior.setOpaque(false);
-        pnlInferior.add(lblStatus);
-        pnlInferior.add(lblConsejo);
-
-        pnlMain.add(lblLogo, BorderLayout.NORTH);
-        pnlMain.add(pnlCenter, BorderLayout.CENTER);
-        pnlMain.add(pnlInferior, BorderLayout.SOUTH);
-
-        add(pnlMain);
-        descargarCacheHorarios();
-
+        // HILO DE EJECUCIÓN AUTÓNOMO (Concurrencia):
+        // Corre de forma asíncrona en bucle infinito simulando el pooling continuo del sensor de huellas.
+        // Esto evita congelar o trabar la pantalla gráfica mientras espera una lectura.
         new Thread(() -> {
             while(true) {
-                String huellaInput = JOptionPane.showInputDialog(this, "Lector Biométrico (" + SALON_ACTUAL + "):");
-                if (huellaInput != null) procesarAccesoDinamico(huellaInput.trim());
+                // Simulación por cuadro de diálogo del escaner biométrico
+                String inputHuella = JOptionPane.showInputDialog(this, "Simulador de Lector Biométrico - Aula " + SALON_ACTUAL + ":");
+                if (inputHuella != null) {
+                    evaluarAccesoBiometrico(inputHuella.trim());
+                }
             }
         }).start();
     }
 
-    private void cargarConfiguracionLocal() {
-        java.util.Properties prop = new java.util.Properties();
-        try (java.io.FileInputStream input = new java.io.FileInputStream("config.properties")) {
+    /**
+     * Carga el archivo config.properties ubicado en la raíz del ejecutable.
+     * Permite cambiar la identidad del salón en caliente sin compilar código de nuevo.
+     */
+    private void cargarConfiguracionArchivoLocal() {
+        Properties prop = new Properties();
+        try (FileInputStream input = new FileInputStream("config.properties")) {
             prop.load(input);
             String salonProp = prop.getProperty("salon");
             if (salonProp != null) this.SALON_ACTUAL = salonProp.trim().toUpperCase();
-        } catch (Exception ex) { System.out.println("Usando aula por defecto."); }
+        } catch (Exception ex) { 
+            System.out.println("No se detectó config.properties. Usando Aula General por defecto."); 
+        }
     }
 
-    private void descargarCacheHorarios() {
-        String sql = "SELECT u.huella_template, h.matricula, h.hora_inicio, h.salon, h.materia " +
-                     "FROM horarios h JOIN usuarios u ON h.matricula = u.matricula";
-        try (Connection con = ConexionSupabase.obtenerConexion();
-             PreparedStatement ps = con.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            cacheHorarios.clear();
-            while(rs.next()) {
-                String huella = rs.getString("huella_template");
-                String[] datos = { rs.getString("matricula"), rs.getString("hora_inicio"), rs.getString("salon"), rs.getString("materia") };
-                cacheHorarios.computeIfAbsent(huella, k -> new java.util.ArrayList<>()).add(datos);
-            }
-        } catch (Exception e) { System.err.println("Error actualizando horarios: " + e.getMessage()); }
-    }
-
-    private void procesarAccesoDinamico(String huella) {
+    /**
+     * ALGORITMO COMPUESTO DE EVALUACIÓN BIOMÉTRICA:
+     * Busca la huella en RAM, consulta el bloque horario del reloj del sistema y valida el aula.
+     */
+    private void evaluarAccesoBiometrico(String huella) {
+        // Mecanismo de contingencia: Si entra una huella que no está en caché, refresca de inmediato 
+        // la memoria consultando a Supabase para capturar registros creados recientemente en la administración.
         if (!cacheHorarios.containsKey(huella)) {
-            descargarCacheHorarios();
+            cacheHorarios = controlador.descargarMatrizHorarios();
         }
 
         if (cacheHorarios.containsKey(huella)) {
-            java.util.List<String[]> listaHorarios = cacheHorarios.get(huella);
-            
-            // Determinar la hora real de la petición
-            LocalTime ahora = LocalTime.now();
-            String bloqueActual = "06:30"; // Bloque por defecto de pruebas si está fuera del turno
-            
-            if (ahora.isAfter(LocalTime.of(6,30)) && ahora.isBefore(LocalTime.of(7,10))) bloqueActual = "06:30";
-            else if (ahora.isAfter(LocalTime.of(7,10)) && ahora.isBefore(LocalTime.of(7,50))) bloqueActual = "07:10";
-            else if (ahora.isAfter(LocalTime.of(7,50)) && ahora.isBefore(LocalTime.of(8,30))) bloqueActual = "07:50";
-            else if (ahora.isAfter(LocalTime.of(8,30)) && ahora.isBefore(LocalTime.of(9,15))) bloqueActual = "08:30";
+            List<String[]> agenda = cacheHorarios.get(huella);
+            String bloqueActual = controlador.obtenerBloqueHorarioActual(); // Revisa la hora del sistema
+            String[] bloqueEncontrado = null;
 
-            String[] horarioEncontrado = null;
-            for (String[] h : listaHorarios) {
-                if (h[1].startsWith(bloqueActual)) {
-                    horarioEncontrado = h;
-                    break;
+            // Buscamos de manera lineal si el usuario tiene una materia asignada en este bloque horario
+            for (String[] h : agenda) {
+                if (h[1].startsWith(bloqueActual)) { 
+                    bloqueEncontrado = h; 
+                    break; 
                 }
             }
 
-            if (horarioEncontrado != null) {
-                String matricula = horarioEncontrado[0];
-                String salonAsignado = horarioEncontrado[2];
-                String materia = horarioEncontrado[3];
+            if (bloqueEncontrado != null) {
+                String mat = bloqueEncontrado[0]; 
+                String salonAsignado = bloqueEncontrado[2]; 
+                String materiaNombre = bloqueEncontrado[3];
 
+                // REGLA A: El estudiante está en el aula correcta y a la hora correcta
                 if (salonAsignado.equalsIgnoreCase(SALON_ACTUAL)) {
-                    mostrarResultado("ASISTENCIA REGISTRADA", "MAT: " + matricula + " (" + materia + ")", verdeExito);
-                    subirAcceso(matricula, true, "Clase actual: " + materia + " en " + SALON_ACTUAL);
+                    actualizarPantalla("ASISTENCIA REGISTRADA ✔", "MATRÍCULA: " + mat + " (" + materiaNombre + ")", new Color(46, 204, 113));
+                    controlador.registrarLogAcceso(mat, true, "Clase: " + materiaNombre + " en " + SALON_ACTUAL, SALON_ACTUAL);
+                
+                // REGLA B: El estudiante tiene hora libre marcada por administración
                 } else if (salonAsignado.equals("LIBRE")) {
-                    mostrarResultado("HORA LIBRE", "MAT: " + matricula, rojoError);
-                    subirAcceso(matricula, false, "El alumno tiene hora libre en este bloque.");
+                    actualizarPantalla("HORA LIBRE", "MATRÍCULA: " + mat, new Color(20, 80, 160));
+                    controlador.registrarLogAcceso(mat, false, "El usuario cuenta con Hora Libre.", SALON_ACTUAL);
+                
+                // REGLA C: El alumno está intentando colarse o se equivocó de aula física
                 } else {
-                    mostrarResultado("SALON EQUIVOCADO", "DEBE IR A: " + salonAsignado, rojoError);
-                    subirAcceso(matricula, false, "Debió asistir a " + salonAsignado + " para la materia " + materia);
+                    actualizarPantalla("SALÓN EQUIVOCADO ❌", "DEBES IR A: " + salonAsignado, new Color(231, 76, 60));
+                    controlador.registrarLogAcceso(mat, false, "Debió asistir a " + salonAsignado + " (" + materiaNombre + ")", SALON_ACTUAL);
                 }
             } else {
-                mostrarResultado("SIN CLASE ASIGNADA", "HORA FUERA DE TURNO", rojoError);
+                actualizarPantalla("FUERA DE TURNO", "SIN MATERIAS ASIGNADAS AHORA", new Color(231, 76, 60));
             }
         } else {
-            mostrarResultado("ACCESO DENEGADO", "HUELLA DESCONOCIDA", rojoError);
-            subirAcceso(null, false, "Huella no parametrizada en el sistema.");
+            // REGLA D: Huella totalmente inexistente en la base de datos (Intruso / Desconocido)
+            actualizarPantalla("ACCESO DENEGADO ❌", "HUELLA DESCONOCIDA", new Color(231, 76, 60));
+            controlador.registrarLogAcceso(null, false, "Intento con huella no registrada.", SALON_ACTUAL);
         }
     }
 
-    private void mostrarResultado(String msg, String user, Color color) {
-        lblStatus.setText(msg); lblStatus.setForeground(color);
-        lblUser.setText(user); lblUser.setForeground(color);
+    // LA ASISTENCIA EN PANTALLA
+    private void actualizarPantalla(String status, String usuario, Color colorContexto) {
+        lblStatus.setText(status); 
+        lblStatus.setForeground(colorContexto);
+        lblUser.setText(usuario); 
+        lblUser.setForeground(colorContexto);
+        
         Timer t = new Timer(3500, e -> {
-            lblStatus.setText("POR FAVOR COLOQUE SU HUELLA"); lblStatus.setForeground(azulPrincipal);
-            lblUser.setText(""); lblUser.setForeground(azulPrincipal);
+            // El estado superior vuelve a invitar a poner la huella
+            lblStatus.setText("POR FAVOR COLOQUE SU HUELLA"); 
+            lblStatus.setForeground(new Color(20, 80, 160));
+            
+            // CONSERVACIÓN EN TIEMPO REAL: No borramos el texto del alumno, 
+            // solo lo pintamos en gris claro para que el maestro vea quién fue el último en checar.
+            lblUser.setForeground(Color.LIGHT_GRAY); 
         });
-        t.setRepeats(false); t.start();
+        t.setRepeats(false);
+        t.start();
     }
 
-    private void subirAcceso(String mat, boolean ok, String mot) {
-        String sql = "INSERT INTO registro_accesos (matricula, permitido, motivo_rechazo, salon_kiosko) VALUES (?, ?, ?, ?)";
-        try (Connection con = ConexionSupabase.obtenerConexion(); PreparedStatement ps = con.prepareStatement(sql)) {
-            if(mat == null) ps.setNull(1, Types.VARCHAR); else ps.setString(1, mat);
-            ps.setBoolean(2, ok); ps.setString(3, mot); ps.setString(4, SALON_ACTUAL);
-            ps.executeUpdate();
-        } catch (Exception e) {}
+    public static void main(String[] args) { 
+        SwingUtilities.invokeLater(() -> new MainKiosko().setVisible(true)); 
     }
-
-    public static void main(String[] args) { SwingUtilities.invokeLater(() -> new MainKiosko().setVisible(true)); }
 }

@@ -2,427 +2,474 @@ package com.proyecto;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
-import java.sql.*;
 import java.text.SimpleDateFormat;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
 
+/**
+ * VISTA ADMINISTRATIVA PRINCIPAL - CORRECCIÓN DE VISIBILIDAD DE TEXTOS Y BOTONES
+ * Se fuerza el color de la fuente en los headers y en los botones para evitar que
+ * el Look and Feel del sistema operativo los oculte.
+ */
 public class MainAdmin extends JFrame {
-    // Componentes Pestaña 1 (Datos Base)
+    
+    private AdminController controlador = new AdminController();
+
+    // Paleta de Diseño Institucional Unificada
+    private static final Color AZUL_OBSCURO = new Color(21, 67, 96);   // Encabezados y títulos principales
+    private static final Color AZUL_MEDIO = new Color(41, 128, 185);   // Fondo de botones principales
+    private static final Color FONDO_GRIS_LIGERO = new Color(245, 247, 250); // Fondo general de la ventana
+    private static final Color AZUL_SELECCION = new Color(235, 245, 251);   // Filas seleccionadas
+    private static final Color ROJO_ERROR = new Color(231, 76, 60);
+    private static final Color VERDE_EXITO = new Color(39, 174, 96);
+    
+    private static final Font FUENTE_SANS = new Font("Segoe UI", Font.PLAIN, 13);
+    private static final Font FUENTE_NEGRITA = new Font("Segoe UI", Font.BOLD, 13);
+
+    // Componentes del Formulario de Registro
     private JTextField txtMatricula, txtNombre, txtCarrera, txtHuella;
     private JComboBox<String> cbRol;
-    
-    // Componentes Pestaña 1 (Matriz de 4 Horas)
-    private JTextField txtSalon1, txtMateria1; // 06:30
-    private JTextField txtSalon2, txtMateria2; // 07:10
-    private JTextField txtSalon3, txtMateria3; // 07:50
-    private JTextField txtSalon4, txtMateria4; // 08:30
-    
-    private JTable tablaAccesosEnVivo;
-    private DefaultTableModel modeloEnVivo;
+    private JTextField txtSalon1, txtMateria1, txtSalon2, txtMateria2, txtSalon3, txtMateria3, txtSalon4, txtMateria4;
 
-    // Componentes Pestaña 2 (Base de Datos + Visor de Horarios)
-    private JTable tablaUsuariosBBDD;
-    private DefaultTableModel modeloBBDD;
-    private JTable tablaHorarioIndividual;
-    private DefaultTableModel modeloHorarioIndividual;
+    // Monitor en Tiempo Real
+    private JPanel pnlMonitorContenedor;
+    private JTable tablaMonitor;
+    private DefaultTableModel modeloMonitor;
+    private JScrollPane scrollMonitor;
 
-    // Componentes Pestaña 3 (Buscador Avanzado)
-    private JTextField txtBuscarSalon, txtBuscarFecha;
+    // Componentes de otras pestañas
+    private DefaultTableModel modeloAlumnos, modeloHorarioAlumno, modeloFiltroSalon;
+    private DefaultTableModel modeloMaestros, modeloHistorialMaestros; 
+    private JTable tablaAlumnos, tablaMaestros;
+    private JTextField txtBuscarSalon, txtBuscarFecha, txtFechaMaestros;
     private JComboBox<String> cbBuscarHora;
-    private JTable tablaFiltroAsistencia;
-    private DefaultTableModel modeloFiltro;
-
-    // Paleta de Colores
-    private Color azulPrincipal = new Color(20, 80, 160);
-    private Color fondoBlanco = new Color(245, 247, 250);
-    private Color rojoBorrar = new Color(192, 57, 43);
 
     public MainAdmin() {
-        setTitle("Panel de Control Administrativo Escolar - Gestión de Horarios Completa");
-        setSize(1200, 780);
+        setTitle("Panel Escolar Administrativo - Arquitectura Decoupled MVC");
+        setSize(1350, 780); 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLocationRelativeTo(null);
+        setLocationRelativeTo(null); 
+        getContentPane().setBackground(FONDO_GRIS_LIGERO);
 
         JTabbedPane panelPestañas = new JTabbedPane();
-        panelPestañas.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        panelPestañas.setFont(FUENTE_NEGRITA);
 
-        armarPestañaRegistroHorarios(panelPestañas);
-        armarPestañaBaseDatos(panelPestañas);
-        armarPestañaBuscadorAsistencias(panelPestañas);
+        // Carga de los módulos en pestañas
+        armarPestañaRegistro(panelPestañas);
+        armarPestañaBaseAlumnos(panelPestañas);
+        armarPestañaBaseMaestros(panelPestañas); 
+        armarPestañaBuscadorSalones(panelPestañas);
 
         add(panelPestañas);
 
-        ScheduledExecutorService monitor = Executors.newSingleThreadScheduledExecutor();
-        monitor.scheduleAtFixedRate(this::actualizarTablaEnVivo, 0, 3, TimeUnit.SECONDS);
+        // Hilo de refresco del monitor (Cada 1.5 segundos)
+        Timer timerIngresoTiempoReal = new Timer(1500, e -> refrescarHistorialMonitorEnVivo());
+        timerIngresoTiempoReal.setRepeats(true);
+        timerIngresoTiempoReal.start();
     }
 
-    private void armarPestañaRegistroHorarios(JTabbedPane tabs) {
-        JPanel panel = new JPanel(new BorderLayout(15, 15));
-        panel.setBackground(fondoBlanco);
-
-        // FORMULARIO IZQUIERDO PRINCIPAL
-        JPanel pnlIzquierdo = new JPanel();
-        pnlIzquierdo.setLayout(new BoxLayout(pnlIzquierdo, BoxLayout.Y_AXIS));
-        pnlIzquierdo.setBackground(Color.WHITE);
-        pnlIzquierdo.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(azulPrincipal, 1),
-            BorderFactory.createEmptyBorder(10, 10, 10, 10)
-        ));
-
-        // Bloque A: Datos Personales
-        JPanel pnlDatosPersonales = new JPanel(new GridBagLayout());
-        pnlDatosPersonales.setOpaque(false);
-        pnlDatosPersonales.setBorder(BorderFactory.createTitledBorder(" 1. Identificación del Usuario "));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(4, 5, 4, 5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-
-        gbc.gridx = 0; gbc.gridy = 0; pnlDatosPersonales.add(new JLabel("Matrícula:"), gbc);
-        txtMatricula = new JTextField(12); gbc.gridx = 1; pnlDatosPersonales.add(txtMatricula, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 1; pnlDatosPersonales.add(new JLabel("Nombre:"), gbc);
-        txtNombre = new JTextField(12); gbc.gridx = 1; pnlDatosPersonales.add(txtNombre, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 2; pnlDatosPersonales.add(new JLabel("Rol:"), gbc);
-        cbRol = new JComboBox<>(new String[]{"ALUMNO", "MAESTRO"}); gbc.gridx = 1; pnlDatosPersonales.add(cbRol, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 3; pnlDatosPersonales.add(new JLabel("Carrera:"), gbc);
-        txtCarrera = new JTextField(12); gbc.gridx = 1; pnlDatosPersonales.add(txtCarrera, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 4; pnlDatosPersonales.add(new JLabel("ID Huella:"), gbc);
-        txtHuella = new JTextField(12); gbc.gridx = 1; pnlDatosPersonales.add(txtHuella, gbc);
-
-        pnlIzquierdo.add(pnlDatosPersonales);
-        pnlIzquierdo.add(Box.createVerticalStrut(10));
-
-        // Bloque B: Matriz de Horarios (Las 4 horas de corrido)
-        JPanel pnlMatrizHorarios = new JPanel(new GridLayout(5, 3, 6, 6));
-        pnlMatrizHorarios.setOpaque(false);
-        pnlMatrizHorarios.setBorder(BorderFactory.createTitledBorder(" 2. Cronograma de Clases (4 Horas) "));
-
-        pnlMatrizHorarios.add(new JLabel("Bloque Hora", SwingConstants.CENTER));
-        pnlMatrizHorarios.add(new JLabel("Salón Aula", SwingConstants.CENTER));
-        pnlMatrizHorarios.add(new JLabel("Materia / Cargo", SwingConstants.CENTER));
-
-        pnlMatrizHorarios.add(new JLabel("06:30 - 07:10"));
-        txtSalon1 = new JTextField(); pnlMatrizHorarios.add(txtSalon1);
-        txtMateria1 = new JTextField(); pnlMatrizHorarios.add(txtMateria1);
-
-        pnlMatrizHorarios.add(new JLabel("07:10 - 07:50"));
-        txtSalon2 = new JTextField(); pnlMatrizHorarios.add(txtSalon2);
-        txtMateria2 = new JTextField(); pnlMatrizHorarios.add(txtMateria2);
-
-        pnlMatrizHorarios.add(new JLabel("07:50 - 08:30"));
-        txtSalon3 = new JTextField(); pnlMatrizHorarios.add(txtSalon3);
-        txtMateria3 = new JTextField(); pnlMatrizHorarios.add(txtMateria3);
-
-        pnlMatrizHorarios.add(new JLabel("08:30 - 09:10"));
-        txtSalon4 = new JTextField(); pnlMatrizHorarios.add(txtSalon4);
-        txtMateria4 = new JTextField(); pnlMatrizHorarios.add(txtMateria4);
-
-        pnlIzquierdo.add(pnlMatrizHorarios);
-        pnlIzquierdo.add(Box.createVerticalStrut(15));
-
-        JButton btnGuardar = new JButton("GUARDAR INTEGRALMENTE");
-        btnGuardar.setBackground(azulPrincipal);
-        btnGuardar.setForeground(Color.WHITE);
-        btnGuardar.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        btnGuardar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-        pnlIzquierdo.add(btnGuardar);
-
-        panel.add(pnlIzquierdo, BorderLayout.WEST);
-
-        // TABLA DERECHA (MONITOR GLOBAL)
-        String[] cols = {"ID", "Matrícula", "Fecha/Hora", "Kiosko Aula", "Estatus", "Motivo"};
-        modeloEnVivo = new DefaultTableModel(cols, 0);
-        tablaAccesosEnVivo = new JTable(modeloEnVivo);
-        JScrollPane sp = new JScrollPane(tablaAccesosEnVivo);
-        sp.setBorder(BorderFactory.createTitledBorder(" Bitácora de Accesos en Vivo (Global) "));
-        panel.add(sp, BorderLayout.CENTER);
-
-        btnGuardar.addActionListener(e -> guardarFormularioCompleto());
-        tabs.addTab("Registro y Horarios Matriz", panel);
-    }
-
-    private void armarPestañaBaseDatos(JTabbedPane tabs) {
-        JPanel panel = new JPanel(new BorderLayout(15, 15));
-        panel.setBackground(fondoBlanco);
-
-        // Tabla Superior: Lista Completa de Alumnos
-        String[] colsBBDD = {"Matrícula", "Nombre", "Rol", "Carrera", "Huella Digital"};
-        modeloBBDD = new DefaultTableModel(colsBBDD, 0);
-        tablaUsuariosBBDD = new JTable(modeloBBDD);
-        JScrollPane spUsuarios = new JScrollPane(tablaUsuariosBBDD);
-        spUsuarios.setBorder(BorderFactory.createTitledBorder(" 1. Selecciona un Alumno/Maestro para ver su Horario "));
-
-        // NUEVO - Tabla Inferior: Desglose de Horario del Alumno Seleccionado
-        String[] colsHorario = {"Bloque Horario", "Salón Asignado", "Materia / Asignatura"};
-        modeloHorarioIndividual = new DefaultTableModel(colsHorario, 0);
-        tablaHorarioIndividual = new JTable(modeloHorarioIndividual);
-        JScrollPane spHorario = new JScrollPane(tablaHorarioIndividual);
-        spHorario.setPreferredSize(new Dimension(1100, 160));
-        spHorario.setBorder(BorderFactory.createTitledBorder(" 2. Carga Académica Asignada (4 Horas del Turno) "));
-
-        // Panel contenedor para organizar ambas tablas de arriba a abajo
-        JPanel pnlTablasCentro = new JPanel(new BorderLayout(10, 10));
-        pnlTablasCentro.setOpaque(false);
-        pnlTablasCentro.add(spUsuarios, BorderLayout.CENTER);
-        pnlTablasCentro.add(spHorario, BorderLayout.SOUTH);
-        panel.add(pnlTablasCentro, BorderLayout.CENTER);
-
-        // Panel de Control de Botones Inferiores
-        JPanel pnlBotones = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        pnlBotones.setBackground(fondoBlanco);
-
-        JButton btnCargar = new JButton("CARGAR / REFRESCAR ALUMNOS");
-        btnCargar.setBackground(azulPrincipal);
-        btnCargar.setForeground(Color.WHITE);
-
-        JButton btnEliminar = new JButton("ELIMINAR USUARIO TOTALMENTE");
-        btnEliminar.setBackground(rojoBorrar);
-        btnEliminar.setForeground(Color.WHITE);
-        btnEliminar.setFont(new Font("Segoe UI", Font.BOLD, 12));
-
-        pnlBotones.add(btnCargar);
-        pnlBotones.add(btnEliminar);
-        panel.add(pnlBotones, BorderLayout.SOUTH);
-
-        // EVENTO CLIC: Al seleccionar un alumno, carga sus materias automáticamente
-        tablaUsuariosBBDD.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) {
-                int fila = tablaUsuariosBBDD.getSelectedRow();
-                if (fila != -1) {
-                    String matricula = modeloBBDD.getValueAt(fila, 0).toString();
-                    cargarHorarioIndividual(matricula);
-                }
-            }
-        });
-
-        btnCargar.addActionListener(e -> {
-            cargarUsuariosBBDD();
-            modeloHorarioIndividual.setRowCount(0); // Limpiar visor de horario
-        });
-        btnEliminar.addActionListener(e -> {
-            eliminarUsuarioSeleccionado();
-            modeloHorarioIndividual.setRowCount(0);
-        });
-
-        tabs.addTab("Base de Datos Completa", panel);
-    }
-
-    private void armarPestañaBuscadorAsistencias(JTabbedPane tabs) {
-        JPanel panel = new JPanel(new BorderLayout(15, 15));
-        panel.setBackground(fondoBlanco);
-
-        JPanel pnlBusqueda = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 12));
-        pnlBusqueda.setBackground(Color.WHITE);
-        pnlBusqueda.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY));
-
-        pnlBusqueda.add(new JLabel("Salón Kiosko:"));
-        txtBuscarSalon = new JTextField(8);
-        pnlBusqueda.add(txtBuscarSalon);
-
-        pnlBusqueda.add(new JLabel("Bloque de Hora:"));
-        cbBuscarHora = new JComboBox<>(new String[]{"06:30", "07:10", "07:50", "08:30"});
-        pnlBusqueda.add(cbBuscarHora);
-
-        pnlBusqueda.add(new JLabel("Fecha (AAAA-MM-DD):"));
-        String fechaHoy = new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
-        txtBuscarFecha = new JTextField(fechaHoy, 9);
-        pnlBusqueda.add(txtBuscarFecha);
-
-        JButton btnBuscar = new JButton("VER ASISTENCIA ESPECÍFICA");
-        btnBuscar.setBackground(azulPrincipal);
-        btnBuscar.setForeground(Color.WHITE);
-        btnBuscar.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        pnlBusqueda.add(btnBuscar);
-
-        panel.add(pnlBusqueda, BorderLayout.NORTH);
-
-        String[] cols = {"Matrícula", "Bloque Horario", "Materia Esperada", "Estatus Asistencia", "Último Intento de Registro"};
-        modeloFiltro = new DefaultTableModel(cols, 0);
-        tablaFiltroAsistencia = new JTable(modeloFiltro);
-        panel.add(new JScrollPane(tablaFiltroAsistencia), BorderLayout.CENTER);
-
-        btnBuscar.addActionListener(e -> filtrarAsistenciasAvanzado());
-
-        tabs.addTab("Historial de Asistencias por Salón", panel);
-    }
-
-    private void guardarFormularioCompleto() {
-        String mat = txtMatricula.getText().trim();
-        String nom = txtNombre.getText().trim();
-        String rol = cbRol.getSelectedItem().toString();
-        String car = txtCarrera.getText().trim().toUpperCase();
-        String hue = txtHuella.getText().trim();
-
-        if (mat.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Falta la matrícula para procesar la transacción.");
-            return;
-        }
-
-        String sqlUser = "INSERT INTO usuarios (matricula, nombre, rol, carrera, huella_template) VALUES (?, ?, ?, ?, ?) " +
-                         "ON CONFLICT (matricula) DO UPDATE SET " +
-                         "nombre = COALESCE(NULLIF(EXCLUDED.nombre, ''), usuarios.nombre), " +
-                         "rol = EXCLUDED.rol, " +
-                         "carrera = COALESCE(NULLIF(EXCLUDED.carrera, ''), usuarios.carrera), " +
-                         "huella_template = COALESCE(NULLIF(EXCLUDED.huella_template, ''), usuarios.huella_template)";
-
-        String sqlHorario = "INSERT INTO horarios (matricula, hora_inicio, salon, materia) VALUES (?, ?, ?, ?) " +
-                            "ON CONFLICT (matricula, hora_inicio) DO UPDATE SET salon = EXCLUDED.salon, materia = EXCLUDED.materia";
-
-        String[][] bloques = {
-            {"06:30:00", txtSalon1.getText().trim().toUpperCase(), txtMateria1.getText().trim().toUpperCase()},
-            {"07:10:00", txtSalon2.getText().trim().toUpperCase(), txtMateria2.getText().trim().toUpperCase()},
-            {"07:50:00", txtSalon3.getText().trim().toUpperCase(), txtMateria3.getText().trim().toUpperCase()},
-            {"08:30:00", txtSalon4.getText().trim().toUpperCase(), txtMateria4.getText().trim().toUpperCase()}
-        };
-
-        try (Connection con = ConexionSupabase.obtenerConexion()) {
-            con.setAutoCommit(false);
-            
-            try (PreparedStatement psUser = con.prepareStatement(sqlUser);
-                 PreparedStatement psHorario = con.prepareStatement(sqlHorario)) {
-                
-                psUser.setString(1, mat); psUser.setString(2, nom); psUser.setString(3, rol); psUser.setString(4, car); psUser.setString(5, hue);
-                psUser.executeUpdate();
-
-                for (String[] b : bloques) {
-                    psHorario.setString(1, mat);
-                    psHorario.setTime(2, Time.valueOf(b[0]));
-                    psHorario.setString(3, b[1].isEmpty() ? "LIBRE" : b[1]);
-                    psHorario.setString(4, b[2].isEmpty() ? "NINGUNA" : b[2]);
-                    psHorario.executeUpdate();
-                }
-                
-                con.commit();
-                JOptionPane.showMessageDialog(this, "Usuario y cronograma de 4 horas guardados exitosamente.");
-                limpiarCamposHorarios();
-            } catch (Exception ex) {
-                con.rollback();
-                throw ex;
-            }
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Error en el guardado total: " + ex.getMessage());
-        }
-    }
-
-    private void limpiarCamposHorarios() {
-        txtMatricula.setText(""); txtNombre.setText(""); txtCarrera.setText(""); txtHuella.setText("");
-        txtSalon1.setText(""); txtMateria1.setText(""); txtSalon2.setText(""); txtMateria2.setText("");
-        txtSalon3.setText(""); txtMateria3.setText(""); txtSalon4.setText(""); txtMateria4.setText("");
-    }
-
-    private void cargarUsuariosBBDD() {
-        String sql = "SELECT matricula, nombre, rol, carrera, huella_template FROM usuarios ORDER BY matricula ASC";
-        try (Connection con = ConexionSupabase.obtenerConexion();
-             PreparedStatement ps = con.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            modeloBBDD.setRowCount(0);
-            while(rs.next()) {
-                modeloBBDD.addRow(new Object[]{
-                    rs.getString("matricula"), rs.getString("nombre"), rs.getString("rol"), rs.getString("carrera"),
-                    rs.getString("huella_template").isEmpty() ? "Sin Registrar" : "ACTIVA ✔"
-                });
-            }
-        } catch (Exception e) { JOptionPane.showMessageDialog(this, "Error: " + e.getMessage()); }
-    }
-
-    // NUEVO: Método que consulta el horario de un alumno específico y lo pinta abajo
-    private void cargarHorarioIndividual(String matricula) {
-        String sql = "SELECT hora_inicio, salon, materia FROM horarios WHERE matricula = ? ORDER BY hora_inicio ASC";
-        try (Connection con = ConexionSupabase.obtenerConexion();
-             PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setString(1, matricula);
-            try (ResultSet rs = ps.executeQuery()) {
-                modeloHorarioIndividual.setRowCount(0);
-                while(rs.next()) {
-                    String horaFormateada = rs.getTime("hora_inicio").toString().substring(0, 5);
-                    modeloHorarioIndividual.addRow(new Object[]{
-                        horaFormateada + " hs",
-                        rs.getString("salon"),
-                        rs.getString("materia")
+    private void refrescarHistorialMonitorEnVivo() {
+        try {
+            List<Object[]> logsRecientes = controlador.obtenerUltimos15Ingresos();
+            if (logsRecientes != null) {
+                modeloMonitor.setRowCount(0);
+                for (Object[] registro : logsRecientes) {
+                    modeloMonitor.addRow(new Object[]{
+                        registro[0], // Matrícula
+                        registro[3], // Hora
+                        registro[4], // Estatus (OK/NO)
+                        registro[5]  // Motivo
                     });
                 }
+                pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(AZUL_MEDIO, 1), " MONITOR DE ACCESOS EN LÍNEA ", 
+                    0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
             }
-        } catch (Exception e) { System.err.println("Error al cargar materias: " + e.getMessage()); }
+        } catch (Exception ex) {
+            pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(ROJO_ERROR, 1), " MONITOR - ERROR DE CONEXIÓN ", 
+                0, 0, FUENTE_NEGRITA, ROJO_ERROR));
+        }
     }
 
-    private void eliminarUsuarioSeleccionado() {
-        int fila = tablaUsuariosBBDD.getSelectedRow();
-        if (fila == -1) {
-            JOptionPane.showMessageDialog(this, "Selecciona a un alumno de la lista para eliminarlo.");
-            return;
-        }
-        String matricula = modeloBBDD.getValueAt(fila, 0).toString();
-        int resp = JOptionPane.showConfirmDialog(this, "¿Deseas purgar la matrícula " + matricula + " del sistema escolar?", "Confirmación Crítica", JOptionPane.YES_NO_OPTION);
+    /**
+     * PESTAÑA PRINCIPAL: REGISTRO Y MONITOR INTEGRADO
+     */
+    private void armarPestañaRegistro(JTabbedPane tabs) {
+        JPanel panelPrincipal = new JPanel(new GridBagLayout());
+        panelPrincipal.setBackground(FONDO_GRIS_LIGERO);
+        GridBagConstraints gbcMaster = new GridBagConstraints();
+
+        // PANEL IZQUIERDO: FORMULARIO DE CAPTURA
+        JPanel pnlIzquierdo = new JPanel(new GridBagLayout());
+        pnlIzquierdo.setBackground(Color.WHITE);
+        pnlIzquierdo.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(220, 224, 230), 1),
+            BorderFactory.createEmptyBorder(15, 15, 15, 15)
+        ));
+        GridBagConstraints gbcForm = new GridBagConstraints();
+        gbcForm.insets = new Insets(5, 5, 5, 5);
+        gbcForm.fill = GridBagConstraints.HORIZONTAL;
+
+        // Sub-panel 1: Datos de Usuario
+        JPanel pnlDatos = new JPanel(new GridBagLayout());
+        pnlDatos.setBackground(Color.WHITE);
+        pnlDatos.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(new Color(210, 215, 225)), " 1. Datos del Usuario ", 0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
         
-        if (resp == JOptionPane.YES_OPTION) {
-            String sql = "DELETE FROM usuarios WHERE matricula = ?";
-            try (Connection con = ConexionSupabase.obtenerConexion();
-                 PreparedStatement ps = con.prepareStatement(sql)) {
-                ps.setString(1, matricula);
-                ps.executeUpdate();
-                JOptionPane.showMessageDialog(this, "Registro borrado satisfactoriamente.");
-                cargarUsuariosBBDD();
-            } catch (Exception e) { JOptionPane.showMessageDialog(this, "Error: " + e.getMessage()); }
+        GridBagConstraints gbcD = new GridBagConstraints();
+        gbcD.insets = new Insets(6, 8, 6, 8); gbcD.fill = GridBagConstraints.HORIZONTAL;
+
+        gbcD.gridx = 0; gbcD.gridy = 0; pnlDatos.add(new JLabel("Matrícula:"), gbcD);
+        txtMatricula = new JTextField(15); gbcD.gridx = 1; pnlDatos.add(txtMatricula, gbcD);
+        gbcD.gridx = 0; gbcD.gridy = 1; pnlDatos.add(new JLabel("Nombre:"), gbcD);
+        txtNombre = new JTextField(15); gbcD.gridx = 1; pnlDatos.add(txtNombre, gbcD);
+        gbcD.gridx = 0; gbcD.gridy = 2; pnlDatos.add(new JLabel("Rol:"), gbcD);
+        cbRol = new JComboBox<>(new String[]{"ALUMNO", "MAESTRO"}); gbcD.gridx = 1; pnlDatos.add(cbRol, gbcD);
+        gbcD.gridx = 0; gbcD.gridy = 3; pnlDatos.add(new JLabel("Carrera/Depto:"), gbcD);
+        txtCarrera = new JTextField(15); gbcD.gridx = 1; pnlDatos.add(txtCarrera, gbcD);
+        gbcD.gridx = 0; gbcD.gridy = 4; pnlDatos.add(new JLabel("ID Huella:"), gbcD);
+        txtHuella = new JTextField(15); gbcD.gridx = 1; pnlDatos.add(txtHuella, gbcD);
+
+        gbcForm.gridx = 0; gbcForm.gridy = 0; gbcForm.weightx = 1.0;
+        pnlIzquierdo.add(pnlDatos, gbcForm);
+
+        // Sub-panel 2: Carga de Turnos
+        JPanel pnlMatriz = new JPanel(new GridBagLayout());
+        pnlMatriz.setBackground(Color.WHITE);
+        pnlMatriz.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(new Color(210, 215, 225)), " 2. Carga del Turno Escolar (4 Bloques) ", 0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
+        
+        GridBagConstraints gbcM = new GridBagConstraints();
+        gbcM.insets = new Insets(4, 4, 4, 4); gbcM.fill = GridBagConstraints.HORIZONTAL;
+
+        gbcM.gridy = 0;
+        gbcM.gridx = 0; pnlMatriz.add(new JLabel("Bloque", SwingConstants.CENTER), gbcM);
+        gbcM.gridx = 1; gbcM.weightx = 1.0; pnlMatriz.add(new JLabel("Salón", SwingConstants.CENTER), gbcM);
+        gbcM.gridx = 2; gbcM.weightx = 1.0; pnlMatriz.add(new JLabel("Materia", SwingConstants.CENTER), gbcM);
+
+        gbcM.gridy = 1; gbcM.weightx = 0; gbcM.gridx = 0; pnlMatriz.add(new JLabel("06:30 - 07:10 "), gbcM);
+        txtSalon1 = new JTextField(); gbcM.gridx = 1; gbcM.weightx = 1.0; pnlMatriz.add(txtSalon1, gbcM);
+        txtMateria1 = new JTextField(); gbcM.gridx = 2; pnlMatriz.add(txtMateria1, gbcM);
+
+        gbcM.gridy = 2; gbcM.weightx = 0; gbcM.gridx = 0; pnlMatriz.add(new JLabel("07:10 - 07:50 "), gbcM);
+        txtSalon2 = new JTextField(); gbcM.gridx = 1; gbcM.weightx = 1.0; pnlMatriz.add(txtSalon2, gbcM);
+        txtMateria2 = new JTextField(); gbcM.gridx = 2; pnlMatriz.add(txtMateria2, gbcM);
+
+        gbcM.gridy = 3; gbcM.weightx = 0; gbcM.gridx = 0; pnlMatriz.add(new JLabel("07:50 - 08:30 "), gbcM);
+        txtSalon3 = new JTextField(); gbcM.gridx = 1; gbcM.weightx = 1.0; pnlMatriz.add(txtSalon3, gbcM);
+        txtMateria3 = new JTextField(); gbcM.gridx = 2; pnlMatriz.add(txtMateria3, gbcM);
+
+        gbcM.gridy = 4; gbcM.weightx = 0; gbcM.gridx = 0; pnlMatriz.add(new JLabel("08:30 - 09:10 "), gbcM);
+        txtSalon4 = new JTextField(); gbcM.gridx = 1; gbcM.weightx = 1.0; pnlMatriz.add(txtSalon4, gbcM);
+        txtMateria4 = new JTextField(); gbcM.gridx = 2; pnlMatriz.add(txtMateria4, gbcM);
+
+        gbcForm.gridy = 1; gbcForm.insets = new Insets(10, 5, 5, 5);
+        pnlIzquierdo.add(pnlMatriz, gbcForm);
+
+        // Botón de Guardado con tamaño controlado y colores definidos explícitamente
+        JButton btnGuardar = new JButton("GUARDAR MATRIZ ACADÉMICA");
+        darEstiloBoton(btnGuardar, AZUL_MEDIO);
+        
+        gbcForm.gridy = 2;
+        gbcForm.fill = GridBagConstraints.NONE; 
+        gbcForm.anchor = GridBagConstraints.CENTER;
+        gbcForm.insets = new Insets(20, 5, 5, 5);
+        pnlIzquierdo.add(btnGuardar, gbcForm);
+
+        // Ubicar formulario en el contenedor maestro
+        gbcMaster.gridx = 0; gbcMaster.gridy = 0;
+        gbcMaster.weightx = 0.45; gbcMaster.weighty = 1.0;
+        gbcMaster.fill = GridBagConstraints.BOTH;
+        gbcMaster.insets = new Insets(10, 10, 10, 5);
+        panelPrincipal.add(pnlIzquierdo, gbcMaster);
+
+        // PANEL DERECHO: MONITOR DE ACCESOS
+        pnlMonitorContenedor = new JPanel(new BorderLayout());
+        pnlMonitorContenedor.setBackground(Color.WHITE);
+        pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(AZUL_MEDIO, 1), " MONITOR DE ACCESOS EN LÍNEA ", 0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
+
+        String[] columnasMonitor = {"Matrícula", "Hora", "Estatus", "Motivo de Acceso"};
+        modeloMonitor = new DefaultTableModel(columnasMonitor, 0) {
+            @Override public boolean isCellEditable(int row, int col) { return false; }
+        };
+
+        tablaMonitor = new JTable(modeloMonitor);
+        estilizarTablaGeneral(tablaMonitor);
+
+        // Renderizador de celdas para pintar las alertas (OK / NO)
+        tablaMonitor.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object val, boolean isSel, boolean hasFoc, int row, int col) {
+                Component c = super.getTableCellRendererComponent(table, val, isSel, hasFoc, row, col);
+                c.setFont(FUENTE_SANS);
+                if (col == 2 && val != null) {
+                    if (val.toString().equals("OK")) {
+                        c.setForeground(VERDE_EXITO);
+                        c.setFont(FUENTE_NEGRITA);
+                    } else {
+                        c.setForeground(ROJO_ERROR);
+                        c.setFont(FUENTE_NEGRITA);
+                    }
+                } else {
+                    c.setForeground(Color.DARK_GRAY);
+                }
+                if (!isSel) {
+                    c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(248, 250, 252));
+                }
+                return c;
+            }
+        });
+
+        scrollMonitor = new JScrollPane(tablaMonitor);
+        scrollMonitor.getViewport().setBackground(Color.WHITE);
+        scrollMonitor.setBorder(BorderFactory.createLineBorder(new Color(215, 220, 230)));
+        pnlMonitorContenedor.add(scrollMonitor, BorderLayout.CENTER);
+
+        gbcMaster.gridx = 1;
+        gbcMaster.weightx = 0.55;
+        gbcMaster.insets = new Insets(10, 5, 10, 10);
+        panelPrincipal.add(pnlMonitorContenedor, gbcMaster);
+
+        btnGuardar.addActionListener(e -> accionGuardar());
+        tabs.addTab("Matriz de Registro", panelPrincipal);
+    }
+
+    /**
+     * PESTAÑA 2: BASE DE ESTUDIANTES
+     */
+    private void armarPestañaBaseAlumnos(JTabbedPane tabs) {
+        JPanel panel = new JPanel(new BorderLayout(15, 15));
+        panel.setBackground(FONDO_GRIS_LIGERO);
+
+        modeloAlumnos = new DefaultTableModel(new String[]{"Matrícula", "Nombre", "Carrera", "Huella"}, 0);
+        tablaAlumnos = new JTable(modeloAlumnos);
+        estilizarTablaGeneral(tablaAlumnos);
+        JScrollPane spAlu = new JScrollPane(tablaAlumnos);
+        spAlu.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(new Color(200,205,215)), " Alumnos Guardados ", 0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
+
+        modeloHorarioAlumno = new DefaultTableModel(new String[]{"Bloque Horario", "Salón Asignado", "Materia / Clase"}, 0);
+        JTable tabHor = new JTable(modeloHorarioAlumno);
+        estilizarTablaGeneral(tabHor);
+        JScrollPane spHor = new JScrollPane(tabHor);
+        spHor.setPreferredSize(new Dimension(1100, 180));
+        spHor.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(new Color(200,205,215)), " Detalle de Materias Asignadas ", 0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
+
+        JPanel pnlCentro = new JPanel(new BorderLayout(10, 10)); pnlCentro.setOpaque(false);
+        pnlCentro.add(spAlu, BorderLayout.CENTER); pnlCentro.add(spHor, BorderLayout.SOUTH);
+        panel.add(pnlCentro, BorderLayout.CENTER);
+
+        JPanel pnlBotones = new JPanel(new FlowLayout(FlowLayout.RIGHT)); pnlBotones.setBackground(FONDO_GRIS_LIGERO);
+        JButton btnRefrescar = new JButton("REFRESCAR TABLA"); darEstiloBoton(btnRefrescar, AZUL_MEDIO);
+        JButton btnEliminar = new JButton("ELIMINAR ALUMNO"); darEstiloBoton(btnEliminar, ROJO_ERROR);
+        pnlBotones.add(btnRefrescar); pnlBotones.add(btnEliminar); panel.add(pnlBotones, BorderLayout.SOUTH);
+
+        tablaAlumnos.getSelectionModel().addListSelectionListener(e -> {
+            if(!e.getValueIsAdjusting() && tablaAlumnos.getSelectedRow() != -1) {
+                String matriculaSeleccionada = tablaAlumnos.getValueAt(tablaAlumnos.getSelectedRow(), 0).toString();
+                cargarHorarioEnPantalla(matriculaSeleccionada, modeloHorarioAlumno);
+            }
+        });
+
+        btnRefrescar.addActionListener(e -> cargarUsuariosPorRol("ALUMNO", modeloAlumnos));
+        btnEliminar.addActionListener(e -> accionEliminar(tablaAlumnos, modeloAlumnos));
+        tabs.addTab("Base Estudiantes", panel);
+    }
+
+    /**
+     * PESTAÑA 3: BASE Y ASISTENCIA DE MAESTROS
+     */
+    private void armarPestañaBaseMaestros(JTabbedPane tabs) {
+        JPanel panel = new JPanel(new BorderLayout(15, 15));
+        panel.setBackground(FONDO_GRIS_LIGERO);
+
+        modeloMaestros = new DefaultTableModel(new String[]{"Matrícula", "Nombre Docente", "Departamento", "Huella"}, 0);
+        tablaMaestros = new JTable(modeloMaestros);
+        estilizarTablaGeneral(tablaMaestros);
+        JScrollPane spMae = new JScrollPane(tablaMaestros);
+        spMae.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(new Color(200,205,215)), " Personal Docente Institucional ", 0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
+
+        modeloHistorialMaestros = new DefaultTableModel(new String[]{"Matrícula", "Nombre", "Aula Visitada", "Fecha y Hora de Acceso"}, 0);
+        JTable tabHist = new JTable(modeloHistorialMaestros);
+        estilizarTablaGeneral(tabHist);
+        JScrollPane spHist = new JScrollPane(tabHist);
+        spHist.setPreferredSize(new Dimension(1100, 200));
+        spHist.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(new Color(200,205,215)), " Asistencias Realizadas por Docentes ", 0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
+
+        JPanel pnlFiltroFecha = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10));
+        pnlFiltroFecha.setBackground(Color.WHITE);
+        pnlFiltroFecha.setBorder(BorderFactory.createLineBorder(new Color(220,225,230)));
+        pnlFiltroFecha.add(new JLabel("Filtrar Día (AAAA-MM-DD):"));
+        String hoy = new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
+        txtFechaMaestros = new JTextField(hoy, 10); pnlFiltroFecha.add(txtFechaMaestros);
+        
+        JButton btnBuscarM = new JButton("CARGAR ASISTENCIA INTEGRAL");
+        darEstiloBoton(btnBuscarM, AZUL_MEDIO);
+        pnlFiltroFecha.add(btnBuscarM);
+
+        JPanel pnlCentro = new JPanel(new BorderLayout(10, 10)); pnlCentro.setOpaque(false);
+        pnlCentro.add(spMae, BorderLayout.CENTER); pnlCentro.add(spHist, BorderLayout.SOUTH);
+        
+        panel.add(pnlFiltroFecha, BorderLayout.NORTH);
+        panel.add(pnlCentro, BorderLayout.CENTER);
+
+        JPanel pnlBotones = new JPanel(new FlowLayout(FlowLayout.RIGHT)); pnlBotones.setBackground(FONDO_GRIS_LIGERO);
+        JButton btnRefrescar = new JButton("REFRESCAR LISTA"); darEstiloBoton(btnRefrescar, AZUL_MEDIO);
+        JButton btnEliminar = new JButton("ELIMINAR DOCENTE"); darEstiloBoton(btnEliminar, ROJO_ERROR);
+        pnlBotones.add(btnRefrescar); pnlBotones.add(btnEliminar); panel.add(pnlBotones, BorderLayout.SOUTH);
+
+        btnBuscarM.addActionListener(e -> cargarAsistenciasMaestrosGlobal());
+        btnRefrescar.addActionListener(e -> cargarUsuariosPorRol("MAESTRO", modeloMaestros));
+        btnEliminar.addActionListener(e -> accionEliminar(tablaMaestros, modeloMaestros));
+
+        tabs.addTab("Base y Asistencia Maestros", panel);
+    }
+
+    /**
+     * PESTAÑA 4: BUSCADOR POR SALÓN
+     */
+    private void armarPestañaBuscadorSalones(JTabbedPane tabs) {
+        JPanel panel = new JPanel(new BorderLayout(15, 15));
+        panel.setBackground(FONDO_GRIS_LIGERO);
+
+        JPanel pnlTop = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10)); pnlTop.setBackground(Color.WHITE);
+        pnlTop.setBorder(BorderFactory.createLineBorder(new Color(220,225,230)));
+        pnlTop.add(new JLabel("Salón:")); txtBuscarSalon = new JTextField(8); pnlTop.add(txtBuscarSalon);
+        pnlTop.add(new JLabel("Bloque:")); cbBuscarHora = new JComboBox<>(new String[]{"06:30", "07:10", "07:50", "08:30"}); pnlTop.add(cbBuscarHora);
+        pnlTop.add(new JLabel("Fecha:")); String hoy = new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
+        txtBuscarFecha = new JTextField(hoy, 9); pnlTop.add(txtBuscarFecha);
+        
+        JButton btnFiltrar = new JButton("FILTRAR REGISTROS"); darEstiloBoton(btnFiltrar, AZUL_MEDIO);
+        pnlTop.add(btnFiltrar); panel.add(pnlTop, BorderLayout.NORTH);
+
+        modeloFiltroSalon = new DefaultTableModel(new String[]{"Matrícula", "Bloque", "Materia Asignada", "Estatus Presencia", "Hora Marcaje"}, 0);
+        JTable tablaFiltro = new JTable(modeloFiltroSalon);
+        estilizarTablaGeneral(tablaFiltro);
+        panel.add(new JScrollPane(tablaFiltro), BorderLayout.CENTER);
+
+        btnFiltrar.addActionListener(e -> accionFiltrarSalon());
+        tabs.addTab("Buscador por Salón", panel);
+    }
+
+    // =========================================================================
+    // LÓGICA DE CONTROLADOR Y EVENTOS
+    // =========================================================================
+
+    private void accionGuardar() {
+        String[][] bloques = { 
+            {"06:30:00", txtSalon1.getText().trim(), txtMateria1.getText().trim()}, 
+            {"07:10:00", txtSalon2.getText().trim(), txtMateria2.getText().trim()}, 
+            {"07:50:00", txtSalon3.getText().trim(), txtMateria3.getText().trim()}, 
+            {"08:30:00", txtSalon4.getText().trim(), txtMateria4.getText().trim()} 
+        };
+        try {
+            controlador.guardarUsuarioYHorarios(txtMatricula.getText().trim(), txtNombre.getText().trim(), cbRol.getSelectedItem().toString(), txtCarrera.getText().trim(), txtHuella.getText().trim(), bloques);
+            JOptionPane.showMessageDialog(this, "Matriz escolar sincronizada de forma integral en Supabase.");
+            txtMatricula.setText(""); txtNombre.setText(""); txtCarrera.setText(""); txtHuella.setText("");
+            txtSalon1.setText(""); txtMateria1.setText(""); txtSalon2.setText(""); txtMateria2.setText("");
+            txtSalon3.setText(""); txtMateria3.setText(""); txtSalon4.setText(""); txtMateria4.setText("");
+        } catch(Exception ex) { 
+            JOptionPane.showMessageDialog(this, "Error de persistencia: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); 
         }
     }
 
-    private void filtrarAsistenciasAvanzado() {
-        String salonBusqueda = txtBuscarSalon.getText().trim().toUpperCase();
-        String horaBusqueda = cbBuscarHora.getSelectedItem().toString() + ":00";
-        String fechaBusqueda = txtBuscarFecha.getText().trim();
+    private void cargarUsuariosPorRol(String rol, DefaultTableModel modelo) {
+        try {
+            modelo.setRowCount(0);
+            List<Object[]> datos = controlador.obtenerUsuariosPorRol(rol);
+            for(Object[] fila : datos) modelo.addRow(fila);
+        } catch(Exception ex) { 
+            JOptionPane.showMessageDialog(this, "Fallo al refrescar: " + ex.getMessage()); 
+        }
+    }
 
-        if(salonBusqueda.isEmpty() || fechaBusqueda.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Salón y Fecha son parámetros obligatorios.");
+    private void cargarHorarioEnPantalla(String mat, DefaultTableModel modelo) {
+        try {
+            modelo.setRowCount(0);
+            List<Object[]> datos = controlador.obtenerHorarioIndividual(mat);
+            for(Object[] fila : datos) modelo.addRow(fila);
+        } catch(Exception ignored) {}
+    }
+
+    private void cargarAsistenciasMaestrosGlobal() {
+        try {
+            modeloHistorialMaestros.setRowCount(0);
+            List<Object[]> datos = controlador.consultarAsistenciaMaestrosPorFecha(txtFechaMaestros.getText().trim());
+            for(Object[] fila : datos) modeloHistorialMaestros.addRow(fila);
+        } catch(Exception ex) { 
+            JOptionPane.showMessageDialog(this, "Fallo en auditoría: " + ex.getMessage()); 
+        }
+    }
+
+    private void accionEliminar(JTable tabla, DefaultTableModel modelo) {
+        int fila = tabla.getSelectedRow();
+        if(fila == -1) {
+            JOptionPane.showMessageDialog(this, "Seleccione un registro.");
             return;
         }
-
-        String sql = "SELECT h.matricula, h.hora_inicio, h.materia, " +
-                     "COALESCE((SELECT 'ASISTIÓ ✔' FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND DATE(r.fecha_hora) = ? LIMIT 1), 'AUSENTE ❌') as estatus, " +
-                     "COALESCE((SELECT CAST(r.fecha_hora AS VARCHAR) FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND DATE(r.fecha_hora) = ? ORDER BY r.fecha_hora DESC LIMIT 1), 'Sin registros hoy') as momento " +
-                     "FROM horarios h WHERE h.salon LIKE ? AND h.hora_inicio = ?";
-                     
-        try (Connection con = ConexionSupabase.obtenerConexion();
-             PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setString(1, fechaBusqueda);
-            ps.setString(2, fechaBusqueda);
-            ps.setString(3, "%" + salonBusqueda + "%");
-            ps.setTime(4, Time.valueOf(horaBusqueda));
-            ResultSet rs = ps.executeQuery();
-            
-            modeloFiltro.setRowCount(0);
-            while(rs.next()) {
-                modeloFiltro.addRow(new Object[]{
-                    rs.getString("matricula"),
-                    rs.getTime("hora_inicio"),
-                    rs.getString("materia"),
-                    rs.getString("estatus"),
-                    rs.getString("momento")
-                });
-            }
-        } catch (Exception e) { JOptionPane.showMessageDialog(this, "Error en el filtrado: " + e.getMessage()); }
+        String mat = modelo.getValueAt(fila, 0).toString();
+        if(JOptionPane.showConfirmDialog(this, "¿Eliminar matrícula [" + mat + "]?", "Confirmar", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+            try { 
+                controlador.eliminarUsuario(mat); 
+                modelo.removeRow(fila); 
+                modeloHorarioAlumno.setRowCount(0); 
+            } catch(Exception ex) { JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage()); }
+        }
     }
 
-    private void actualizarTablaEnVivo() {
-        String sql = "SELECT id, matricula, fecha_hora, salon_kiosko, permitido, motivo_rechazo FROM registro_accesos ORDER BY fecha_hora DESC LIMIT 15";
-        try (Connection con = ConexionSupabase.obtenerConexion();
-             PreparedStatement ps = con.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            modeloEnVivo.setRowCount(0);
-            while (rs.next()) {
-                modeloEnVivo.addRow(new Object[]{ 
-                    rs.getInt("id"), rs.getString("matricula"), rs.getTimestamp("fecha_hora"), 
-                    rs.getString("salon_kiosko"), rs.getBoolean("permitido") ? "ACCESO ✔" : "DENEGADO ❌", 
-                    rs.getString("motivo_rechazo")
-                });
+    private void accionFiltrarSalon() {
+        try {
+            modeloFiltroSalon.setRowCount(0);
+            String bloqueHora = cbBuscarHora.getSelectedItem().toString() + ":00";
+            List<Object[]> datos = controlador.filtrarAsistenciasPorSalon(txtBuscarSalon.getText().trim().toUpperCase(), bloqueHora, txtBuscarFecha.getText().trim());
+            for(Object[] row : datos) modeloFiltroSalon.addRow(row);
+        } catch(Exception e) { JOptionPane.showMessageDialog(this, "Error analítico: " + e.getMessage()); }
+    }
+
+    // MÉTODOS AUXILIARES: PERSONALIZACIÓN ABSOLUTA DE COMPONENTES
+    private void darEstiloBoton(JButton boton, Color colorFondo) {
+        boton.setBackground(colorFondo); 
+        boton.setForeground(Color.WHITE); // Fuerza el texto a Blanco
+        boton.setFont(FUENTE_NEGRITA); 
+        boton.setFocusPainted(false);
+        boton.setOpaque(true);
+        boton.setBorderPainted(false); // Elimina bordes nativos feos
+        boton.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
+        boton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+    }
+
+    private void estilizarTablaGeneral(JTable tabla) {
+        tabla.setFont(FUENTE_SANS);
+        tabla.setRowHeight(24);
+        tabla.setSelectionBackground(AZUL_SELECCION);
+        tabla.setSelectionForeground(Color.BLACK);
+        tabla.setGridColor(new Color(235, 238, 243));
+        
+        // CORRECCIÓN DE HEADERS INVISIBLES: Forzar renderizador propio con fondo azul y letras blancas
+        JTableHeader header = tabla.getTableHeader();
+        header.setReorderingAllowed(false);
+        header.setDefaultRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object val, boolean isSel, boolean hasFoc, int row, int col) {
+                JLabel lbl = (JLabel) super.getTableCellRendererComponent(table, val, isSel, hasFoc, row, col);
+                lbl.setBackground(AZUL_OBSCURO);
+                lbl.setForeground(Color.WHITE); // Texto siempre visible en blanco
+                lbl.setFont(FUENTE_NEGRITA);
+                lbl.setHorizontalAlignment(SwingConstants.CENTER);
+                lbl.setOpaque(true);
+                lbl.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 1, new Color(40, 80, 110)));
+                return lbl;
             }
+        });
+    }
+
+    public static void main(String[] args) { 
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception ignored) {}
+        SwingUtilities.invokeLater(() -> new MainAdmin().setVisible(true)); 
     }
-
-    public static void main(String[] args) { SwingUtilities.invokeLater(() -> new MainAdmin().setVisible(true)); }
 }

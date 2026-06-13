@@ -9,9 +9,7 @@ import java.text.SimpleDateFormat;
 import java.util.List;
 
 /**
- * VISTA ADMINISTRATIVA PRINCIPAL - CORRECCIÓN DE VISIBILIDAD DE TEXTOS Y BOTONES
- * Se fuerza el color de la fuente en los headers y en los botones para evitar que
- * el Look and Feel del sistema operativo los oculte.
+ * VISTA ADMINISTRATIVA PRINCIPAL - INTEGRACIÓN PERFECTA CON ADMINCONTROLLER
  */
 public class MainAdmin extends JFrame {
     
@@ -76,11 +74,12 @@ public class MainAdmin extends JFrame {
             if (logsRecientes != null) {
                 modeloMonitor.setRowCount(0);
                 for (Object[] registro : logsRecientes) {
+                    // CORRECCIÓN DE ÍNDICES: Mapeo exacto basado en el Object[] del AdminController
                     modeloMonitor.addRow(new Object[]{
-                        registro[0], // Matrícula
-                        registro[3], // Hora
-                        registro[4], // Estatus (OK/NO)
-                        registro[5]  // Motivo
+                        registro[0], // Matricula
+                        registro[3], // Hora Formateada (HH:mm:ss)
+                        registro[4], // Estatus (OK / NO)
+                        registro[5]  // Motivo Final
                     });
                 }
                 pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
@@ -136,7 +135,7 @@ public class MainAdmin extends JFrame {
         gbcForm.gridx = 0; gbcForm.gridy = 0; gbcForm.weightx = 1.0;
         pnlIzquierdo.add(pnlDatos, gbcForm);
 
-        // Sub-panel 2: Carga de Turnos
+        // Sub-panel 2: Carga de Turnos (Formatos Base)
         JPanel pnlMatriz = new JPanel(new GridBagLayout());
         pnlMatriz.setBackground(Color.WHITE);
         pnlMatriz.setBorder(BorderFactory.createTitledBorder(
@@ -169,7 +168,7 @@ public class MainAdmin extends JFrame {
         gbcForm.gridy = 1; gbcForm.insets = new Insets(10, 5, 5, 5);
         pnlIzquierdo.add(pnlMatriz, gbcForm);
 
-        // Botón de Guardado con tamaño controlado y colores definidos explícitamente
+        // Botón de Guardado
         JButton btnGuardar = new JButton("GUARDAR MATRIZ ACADÉMICA");
         darEstiloBoton(btnGuardar, AZUL_MEDIO);
         
@@ -200,7 +199,7 @@ public class MainAdmin extends JFrame {
         tablaMonitor = new JTable(modeloMonitor);
         estilizarTablaGeneral(tablaMonitor);
 
-        // Renderizador de celdas para pintar las alertas (OK / NO)
+        // Renderizador de alertas (OK / NO)
         tablaMonitor.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object val, boolean isSel, boolean hasFoc, int row, int col) {
@@ -338,6 +337,8 @@ public class MainAdmin extends JFrame {
         JPanel pnlTop = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10)); pnlTop.setBackground(Color.WHITE);
         pnlTop.setBorder(BorderFactory.createLineBorder(new Color(220,225,230)));
         pnlTop.add(new JLabel("Salón:")); txtBuscarSalon = new JTextField(8); pnlTop.add(txtBuscarSalon);
+        
+        // Selector adaptado a bloques
         pnlTop.add(new JLabel("Bloque:")); cbBuscarHora = new JComboBox<>(new String[]{"06:30", "07:10", "07:50", "08:30"}); pnlTop.add(cbBuscarHora);
         pnlTop.add(new JLabel("Fecha:")); String hoy = new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
         txtBuscarFecha = new JTextField(hoy, 9); pnlTop.add(txtBuscarFecha);
@@ -347,6 +348,7 @@ public class MainAdmin extends JFrame {
 
         modeloFiltroSalon = new DefaultTableModel(new String[]{"Matrícula", "Bloque", "Materia Asignada", "Estatus Presencia", "Hora Marcaje"}, 0);
         JTable tablaFiltro = new JTable(modeloFiltroSalon);
+        
         estilizarTablaGeneral(tablaFiltro);
         panel.add(new JScrollPane(tablaFiltro), BorderLayout.CENTER);
 
@@ -432,11 +434,11 @@ public class MainAdmin extends JFrame {
     // MÉTODOS AUXILIARES: PERSONALIZACIÓN ABSOLUTA DE COMPONENTES
     private void darEstiloBoton(JButton boton, Color colorFondo) {
         boton.setBackground(colorFondo); 
-        boton.setForeground(Color.WHITE); // Fuerza el texto a Blanco
+        boton.setForeground(Color.WHITE); 
         boton.setFont(FUENTE_NEGRITA); 
         boton.setFocusPainted(false);
         boton.setOpaque(true);
-        boton.setBorderPainted(false); // Elimina bordes nativos feos
+        boton.setBorderPainted(false); 
         boton.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
         boton.setCursor(new Cursor(Cursor.HAND_CURSOR));
     }
@@ -448,7 +450,6 @@ public class MainAdmin extends JFrame {
         tabla.setSelectionForeground(Color.BLACK);
         tabla.setGridColor(new Color(235, 238, 243));
         
-        // CORRECCIÓN DE HEADERS INVISIBLES: Forzar renderizador propio con fondo azul y letras blancas
         JTableHeader header = tabla.getTableHeader();
         header.setReorderingAllowed(false);
         header.setDefaultRenderer(new DefaultTableCellRenderer() {
@@ -456,7 +457,7 @@ public class MainAdmin extends JFrame {
             public Component getTableCellRendererComponent(JTable table, Object val, boolean isSel, boolean hasFoc, int row, int col) {
                 JLabel lbl = (JLabel) super.getTableCellRendererComponent(table, val, isSel, hasFoc, row, col);
                 lbl.setBackground(AZUL_OBSCURO);
-                lbl.setForeground(Color.WHITE); // Texto siempre visible en blanco
+                lbl.setForeground(Color.WHITE); 
                 lbl.setFont(FUENTE_NEGRITA);
                 lbl.setHorizontalAlignment(SwingConstants.CENTER);
                 lbl.setOpaque(true);

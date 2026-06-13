@@ -6,19 +6,40 @@ import java.util.List;
 
 /**
  * CONTROLADOR ADMINISTRATIVO (MVC - PATRÓN DE AISLAMIENTO)
- * Esta clase centraliza toda la lógica de persistencia y consultas pesadas hacia 
- * Supabase (PostgreSQL), manteniendo la interfaz MainAdmin.java libre de código espagueti.
+ * Corregido para evitar falsos positivos en la conversión automática de turnos.
  */
 public class AdminController {
 
     /**
+     * Convierte una cadena de hora al formato estricto "HH:mm:ss" de 24 horas.
+     * Mantiene los bloques fijos de la interfaz sin alterarlos por la hora del sistema.
+     */
+    private String normalizarHora24(String horaOriginal, String rol) {
+        if (horaOriginal == null || horaOriginal.isEmpty()) return "00:00:00";
+        
+        // Limpiar espacios o textos basura como " hs"
+        String horaLimpia = horaOriginal.replace(" hs", "").trim();
+        
+        // Si el bloque viene como rango (ej: "08:30 - 09:10"), nos quedamos solo con la hora de inicio
+        if (horaLimpia.contains("-")) {
+            horaLimpia = horaLimpia.split("-")[0].trim();
+        }
+        
+        if (!horaLimpia.contains(":")) return "00:00:00";
+        
+        String[] partes = horaLimpia.split(":");
+        int horaInt = Integer.parseInt(partes[0]);
+        int minutos = Integer.parseInt(partes[1].substring(0, 2)); // Evita segundos pegados si los hay
+        
+        // REMOVIDO EL DESFASE AUTOMÁTICO REBELDE: 
+        // Dejamos que la hora que se seleccione o registre sea exactamente la que se busca.
+        return String.format("%02d:%02d:00", horaInt, minutos);
+    }
+
+    /**
      * Guarda de forma atómica un usuario y su matriz completa de 4 horas académicas.
-     * Utiliza un bloque transaccional (ACID) para garantizar que si el registro del usuario 
-     * o cualquiera de sus 4 horas falla, el sistema no quede con datos huérfanos o corruptos.
      */
     public boolean guardarUsuarioYHorarios(String mat, String nom, String rol, String car, String hue, String[][] bloques) throws Exception {
-        // UPSERT para Usuarios: Evita excepciones por llaves duplicadas. Si la matrícula ya existe,
-        // actualiza los campos usando COALESCE para no destruir datos existentes con cadenas vacías.
         String sqlUser = "INSERT INTO usuarios (matricula, nombre, rol, carrera, huella_template) VALUES (?, ?, ?, ?, ?) " +
                          "ON CONFLICT (matricula) DO UPDATE SET " +
                          "nombre = COALESCE(NULLIF(EXCLUDED.nombre, ''), usuarios.nombre), " +
@@ -26,56 +47,46 @@ public class AdminController {
                          "carrera = COALESCE(NULLIF(EXCLUDED.carrera, ''), usuarios.carrera), " +
                          "huella_template = COALESCE(NULLIF(EXCLUDED.huella_template, ''), usuarios.huella_template)";
 
-        // UPSERT para Horarios: La tabla tiene una restricción UNIQUE compuesta por (matricula, hora_inicio).
-        // Si se intenta registrar una materia en un bloque de hora ya ocupado por esa matrícula, lo sobrescribe de inmediato.
         String sqlHorario = "INSERT INTO horarios (matricula, hora_inicio, salon, materia) VALUES (?, ?, ?, ?) " +
                             "ON CONFLICT (matricula, hora_inicio) DO UPDATE SET salon = EXCLUDED.salon, materia = EXCLUDED.materia";
 
-        // Establecemos la conexión usando el pool de la clase ConexionSupabase
         try (Connection con = ConexionSupabase.obtenerConexion()) { 
-            // CRITICAL: Desactivamos el AutoCommit para iniciar manualmente la transacción. 
-            // Esto evita que las sentencias se guarden de forma aislada a mitad de la ejecución.
             con.setAutoCommit(false); 
             
             try (PreparedStatement psUser = con.prepareStatement(sqlUser);
                  PreparedStatement psHorario = con.prepareStatement(sqlHorario)) {
                 
-                // Vinculación segura de parámetros en posiciones estrictas para mitigar SQL Injection
                 psUser.setString(1, mat); 
                 psUser.setString(2, nom); 
                 psUser.setString(3, rol); 
                 psUser.setString(4, car); 
-                psUser.setString(5, hue); // El hash o string plano simulado de la huella biométrica
+                psUser.setString(5, hue);
                 psUser.executeUpdate();
 
-                // Iteración lineal sobre la matriz de 4 bloques de tiempo enviados desde la Vista
                 for (String[] b : bloques) {
+                    if (b[0] == null || b[0].isEmpty()) continue;
+                    
                     psHorario.setString(1, mat);
-                    // Conversión explícita de String "HH:MM:SS" a un objeto java.sql.Time compatible con PostgreSQL
-                    psHorario.setTime(2, Time.valueOf(b[0])); 
-                    // Operador ternario integrado: Si el campo de la interfaz llegó vacío, por sanidad se inserta "LIBRE"
+                    
+                    String horaConvertida24 = normalizarHora24(b[0], rol);
+                    psHorario.setTime(2, Time.valueOf(horaConvertida24)); 
+                    
                     psHorario.setString(3, b[1].isEmpty() ? "LIBRE" : b[1].toUpperCase());
                     psHorario.setString(4, b[2].isEmpty() ? "NINGUNA" : b[2].toUpperCase());
-                    // Ejecución por lotes individuales dentro de la misma transacción activa
                     psHorario.executeUpdate();
                 }
                 
-                // Si todo el bucle se ejecutó sin excepciones, disparamos el commit definitivo en la nube
                 con.commit(); 
                 return true;
             } catch (Exception ex) { 
-                // Mecanismo de seguridad: Si algo falló (ej. red caída o tipo de dato inválido), 
-                // deshacemos todos los cambios parciales para que la base de datos vuelva a su estado original.
                 con.rollback(); 
-                throw ex; // Re-lanzamos la excepción para que sea capturada por el JOptionPane de la Vista
+                throw ex; 
             }
         }
     }
 
     /**
-     * Consulta y extrae colecciones de usuarios filtrados por Rol (ALUMNO/MAESTRO).
-     * Devuelve una estructura desacoplada (List de Object[]) para evitar que la interfaz visual 
-     * manipule objetos del driver de base de datos como un ResultSet.
+     * Consulta y extrae colecciones de usuarios filtrados por Rol.
      */
     public List<Object[]> obtenerUsuariosPorRol(String rol) throws Exception {
         List<Object[]> lista = new ArrayList<>();
@@ -86,7 +97,6 @@ public class AdminController {
             ps.setString(1, rol);
             try (ResultSet rs = ps.executeQuery()) {
                 while(rs.next()) {
-                    // Mapeo manual de tipos: Transformamos el estado de la huella en un indicador visual intuitivo para la tabla Swing
                     String estatusHuella = (rs.getString("huella_template") == null || rs.getString("huella_template").isEmpty()) ? "Sin Registrar" : "ACTIVA ✔";
                     lista.add(new Object[]{
                         rs.getString("matricula"), 
@@ -102,7 +112,6 @@ public class AdminController {
 
     /**
      * Recupera el desglose del itinerario académico diario de un estudiante.
-     * Formatea el objeto Time de la base de datos a un String amigable de 5 caracteres ("HH:MM").
      */
     public List<Object[]> obtenerHorarioIndividual(String matricula) throws Exception {
         List<Object[]> lista = new ArrayList<>();
@@ -113,8 +122,8 @@ public class AdminController {
             ps.setString(1, matricula);
             try (ResultSet rs = ps.executeQuery()) {
                 while(rs.next()) {
-                    // Extraemos el Time, lo pasamos a String "06:30:00" y aplicamos un substring para truncar los segundos ":00"
-                    String horaFormateada = rs.getTime("hora_inicio").toString().substring(0, 5) + " hs";
+                    Time hora = rs.getTime("hora_inicio");
+                    String horaFormateada = (hora != null) ? hora.toString().substring(0, 5) + " hs" : "00:00 hs";
                     lista.add(new Object[]{
                         horaFormateada, 
                         rs.getString("salon"), 
@@ -127,10 +136,7 @@ public class AdminController {
     }
 
     /**
-     * Ejecuta una purga de datos por Matrícula. 
-     * Nota de Arquitectura: Debido a que las tablas en Supabase están enlazadas con 
-     * llaves foráneas en modo 'ON DELETE CASCADE', al borrar al usuario aquí,
-     * la base de datos borra automáticamente sus horarios asociados de forma interna.
+     * Ejecuta una purga de datos por Matrícula de forma segura.
      */
     public void eliminarUsuario(String matricula) throws Exception {
         String sql = "DELETE FROM usuarios WHERE matricula = ?";
@@ -142,29 +148,35 @@ public class AdminController {
     }
 
     /**
-     * BUSCADOR COMPUESTO (Subconsultas Correlacionadas):
-     * Muestra de forma reactiva quién debía estar en un salón y cruza datos con logs de accesos reales.
-     * Resuelve el problema espagueti de hacer cruces de datos con filtros complejos desde Java.
+     * BUSCADOR COMPUESTO: Filtra asistencias convirtiendo la hora de consulta a un String plano para evitar fallas de casteo.
+     */
+   /**
+     * BUSCADOR COMPUESTO: Filtra asistencias convirtiendo la hora de consulta a un String plano para evitar fallas de casteo.
+     * CORREGIDO: Se añade cast explícito (::DATE) para compatibilidad estricta con PostgreSQL/Supabase.
      */
     public List<Object[]> filtrarAsistenciasPorSalon(String salon, String hora, String fecha) throws Exception {
         List<Object[]> lista = new ArrayList<>();
+        
+        // FIX: Agregamos ::DATE a los parámetros que reciben la fecha para evitar el choque de tipos de datos
         String sql = "SELECT h.matricula, h.materia, " +
-                     "COALESCE((SELECT 'ASISTIÓ ✔' FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND DATE(r.fecha_hora) = ? LIMIT 1), 'AUSENTE ❌') as estatus, " +
-                     "COALESCE((SELECT CAST(r.fecha_hora AS VARCHAR) FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND DATE(r.fecha_hora) = ? ORDER BY r.fecha_hora DESC LIMIT 1), 'Sin registros') as momento " +
-                     "FROM horarios h WHERE h.salon LIKE ? AND h.hora_inicio = ?";
+                     "COALESCE((SELECT 'ASISTIÓ ✔' FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND DATE(r.fecha_hora) = ?::DATE LIMIT 1), 'AUSENTE ❌') as estatus, " +
+                     "COALESCE((SELECT CAST(r.fecha_hora AS VARCHAR) FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND DATE(r.fecha_hora) = ?::DATE ORDER BY r.fecha_hora DESC LIMIT 1), 'Sin registros') as momento " +
+                     "FROM horarios h WHERE h.salon LIKE ? AND CAST(h.hora_inicio AS VARCHAR) LIKE ?";
                      
         try (Connection con = ConexionSupabase.obtenerConexion();
              PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setString(1, fecha); 
-            ps.setString(2, fecha);
+            ps.setString(1, fecha); // Ahora Postgres sabe que este texto se convertirá a ::DATE
+            ps.setString(2, fecha); // Lo mismo aquí
             ps.setString(3, "%" + salon + "%"); 
-            ps.setTime(4, Time.valueOf(hora));
+            
+            String horaConsulta24 = normalizarHora24(hora, "BUSQUEDA");
+            ps.setString(4, horaConsulta24 + "%"); 
             
             try (ResultSet rs = ps.executeQuery()) {
                 while(rs.next()) {
                     lista.add(new Object[]{ 
                         rs.getString("matricula"), 
-                        hora.substring(0,5), 
+                        horaConsulta24.substring(0,5) + " hs", 
                         rs.getString("materia"), 
                         rs.getString("estatus"), 
                         rs.getString("momento") 
@@ -176,9 +188,7 @@ public class AdminController {
     }
 
     /**
-     * VISTA DE AUDITORÍA UNIFICADA: 
-     * Realiza un INNER JOIN entre accesos y usuarios para extraer en un solo viaje de red
-     * las asistencias efectivas únicamente del personal con rol 'MAESTRO' filtrado por día.
+     * VISTA DE AUDITORÍA UNIFICADA PARA DOCENTES
      */
     public List<Object[]> consultarAsistenciaMaestrosPorFecha(String fecha) throws Exception {
         List<Object[]> lista = new ArrayList<>();
@@ -191,11 +201,13 @@ public class AdminController {
             ps.setString(1, fecha);
             try (ResultSet rs = ps.executeQuery()) {
                 while(rs.next()) {
+                    Object fechaHoraObj = rs.getTimestamp("fecha_hora");
+                    String fechaHoraStr = (fechaHoraObj != null) ? fechaHoraObj.toString() : "Sin fecha";
                     lista.add(new Object[]{
                         rs.getString("matricula"), 
                         rs.getString("nombre"),
                         rs.getString("salon_kiosko"), 
-                        rs.getTimestamp("fecha_hora").toString() 
+                        fechaHoraStr
                     });
                 }
             }
@@ -204,15 +216,10 @@ public class AdminController {
     }
 
     /**
-     * MONITOR DE HISTORIAL EN TIEMPO REAL (CORE FIX - RAFAGA DE 15 INTENTOS)
-     * Extrae de forma descendente los últimos 15 marcajes registrados en la base de datos,
-     * cruzando con la tabla usuarios mediante un LEFT JOIN para jalar el nombre y rol.
-     * Alimenta directamente a la tabla estilo terminal de la pestaña principal.
+     * MONITOR DE HISTORIAL EN TIEMPO REAL
      */
     public List<Object[]> obtenerUltimos15Ingresos() throws Exception {
         List<Object[]> lista = new ArrayList<>();
-        
-        // El 'LIMIT 15' nos asegura traer únicamente la ráfaga de eventos más frescos de la nube
         String sql = "SELECT r.matricula, COALESCE(u.nombre, 'NO RECONOCIDO') as nombre, " +
                      "COALESCE(u.rol, 'DESCONOCIDO') as rol, CAST(r.fecha_hora AS VARCHAR) as hora, " +
                      "r.permitido, r.motivo_rechazo " +
@@ -232,17 +239,14 @@ public class AdminController {
                 boolean permitido = rs.getBoolean("permitido");
                 String motivo = rs.getString("motivo_rechazo");
 
-                // Extracción del bloque de tiempo (HH:MM:SS) quitándole la fecha y milisegundos de Postgres
                 String horaFormateada = "--:--:--";
                 if (horaCompleta != null && horaCompleta.length() >= 19) {
                     horaFormateada = horaCompleta.substring(11, 19);
                 }
 
-                // Homologamos los textos de salida para limpiar las columnas de la interfaz
                 String estatus = permitido ? "OK" : "NO";
                 String motivoFinal = (motivo != null && !motivo.isEmpty()) ? motivo : (permitido ? "Acceso Correcto" : "Hora Inválida");
 
-                // Añadimos el renglón estructurado al paquete final de la lista
                 lista.add(new Object[]{ 
                     matricula != null ? matricula : "S/M", 
                     nombre, 

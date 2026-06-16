@@ -187,14 +187,16 @@ public class AdminController {
         return lista;
     }
 
-    /**
+ /**
      * VISTA DE AUDITORÍA UNIFICADA PARA DOCENTES
+     * CORREGIDO: Se añade el cast explicito (?::DATE) para solucionar el error analítico de Postgres.
      */
     public List<Object[]> consultarAsistenciaMaestrosPorFecha(String fecha) throws Exception {
         List<Object[]> lista = new ArrayList<>();
+        // FIX: Agregamos ::DATE al parámetro para que coincida con el tipo de la función DATE()
         String sql = "SELECT u.matricula, u.nombre, r.salon_kiosko, r.fecha_hora " +
                      "FROM registro_accesos r INNER JOIN usuarios u ON r.matricula = u.matricula " +
-                     "WHERE u.rol = 'MAESTRO' AND DATE(r.fecha_hora) = ? AND r.permitido = true ORDER BY r.fecha_hora ASC";
+                     "WHERE u.rol = 'MAESTRO' AND DATE(r.fecha_hora) = ?::DATE AND r.permitido = true ORDER BY r.fecha_hora ASC";
                      
         try (Connection con = ConexionSupabase.obtenerConexion();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -214,7 +216,6 @@ public class AdminController {
         }
         return lista;
     }
-
     /**
      * MONITOR DE HISTORIAL EN TIEMPO REAL
      */

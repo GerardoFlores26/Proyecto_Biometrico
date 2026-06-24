@@ -9,7 +9,7 @@ import java.text.SimpleDateFormat;
 import java.util.List;
 
 /**
- * VISTA ADMINISTRATIVA PRINCIPAL - INTEGRACIÓN PERFECTA CON ADMINCONTROLLER
+ * VISTA ADMINISTRATIVA PRINCIPAL - INTEGRACIÓN BIOMÉTRICA AS608 Y SUPABASE
  */
 public class MainAdmin extends JFrame {
     
@@ -74,7 +74,6 @@ public class MainAdmin extends JFrame {
             if (logsRecientes != null) {
                 modeloMonitor.setRowCount(0);
                 for (Object[] registro : logsRecientes) {
-                    // CORRECCIÓN DE ÍNDICES: Mapeo exacto basado en el Object[] del AdminController
                     modeloMonitor.addRow(new Object[]{
                         registro[0], // Matricula
                         registro[3], // Hora Formateada (HH:mm:ss)
@@ -129,8 +128,25 @@ public class MainAdmin extends JFrame {
         cbRol = new JComboBox<>(new String[]{"ALUMNO", "MAESTRO"}); gbcD.gridx = 1; pnlDatos.add(cbRol, gbcD);
         gbcD.gridx = 0; gbcD.gridy = 3; pnlDatos.add(new JLabel("Carrera/Depto:"), gbcD);
         txtCarrera = new JTextField(15); gbcD.gridx = 1; pnlDatos.add(txtCarrera, gbcD);
-        gbcD.gridx = 0; gbcD.gridy = 4; pnlDatos.add(new JLabel("ID Huella:"), gbcD);
-        txtHuella = new JTextField(15); gbcD.gridx = 1; pnlDatos.add(txtHuella, gbcD);
+        
+        // INTEGRACIÓN DEL BOTÓN DE HARDWARE PARA CAPTURA BIOMÉTRICA
+        gbcD.gridx = 0; gbcD.gridy = 4; pnlDatos.add(new JLabel("Huella Hex:"), gbcD);
+        
+        JPanel pnlHuellaFisica = new JPanel(new BorderLayout(5, 0));
+        pnlHuellaFisica.setOpaque(false);
+        
+        txtHuella = new JTextField(10);
+        txtHuella.setEditable(false);
+        txtHuella.setBackground(new Color(240, 244, 248));
+        
+        JButton btnEscanearHuella = new JButton("Escanear");
+        darEstiloBoton(btnEscanearHuella, AZUL_MEDIO);
+        btnEscanearHuella.setMargin(new Insets(2, 8, 2, 8));
+        
+        pnlHuellaFisica.add(txtHuella, BorderLayout.CENTER);
+        pnlHuellaFisica.add(btnEscanearHuella, BorderLayout.EAST);
+        
+        gbcD.gridx = 1; pnlDatos.add(pnlHuellaFisica, gbcD);
 
         gbcForm.gridx = 0; gbcForm.gridy = 0; gbcForm.weightx = 1.0;
         pnlIzquierdo.add(pnlDatos, gbcForm);
@@ -233,6 +249,8 @@ public class MainAdmin extends JFrame {
         gbcMaster.insets = new Insets(10, 5, 10, 10);
         panelPrincipal.add(pnlMonitorContenedor, gbcMaster);
 
+        // Disparadores de Acción
+        btnEscanearHuella.addActionListener(e -> ejecutarEnrolamientoEnSegundoPlano(btnEscanearHuella));
         btnGuardar.addActionListener(e -> accionGuardar());
         tabs.addTab("Matriz de Registro", panelPrincipal);
     }
@@ -338,7 +356,6 @@ public class MainAdmin extends JFrame {
         pnlTop.setBorder(BorderFactory.createLineBorder(new Color(220,225,230)));
         pnlTop.add(new JLabel("Salón:")); txtBuscarSalon = new JTextField(8); pnlTop.add(txtBuscarSalon);
         
-        // Selector adaptado a bloques
         pnlTop.add(new JLabel("Bloque:")); cbBuscarHora = new JComboBox<>(new String[]{"06:30", "07:10", "07:50", "08:30"}); pnlTop.add(cbBuscarHora);
         pnlTop.add(new JLabel("Fecha:")); String hoy = new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
         txtBuscarFecha = new JTextField(hoy, 9); pnlTop.add(txtBuscarFecha);
@@ -359,6 +376,95 @@ public class MainAdmin extends JFrame {
     // =========================================================================
     // LÓGICA DE CONTROLADOR Y EVENTOS
     // =========================================================================
+
+   private void ejecutarEnrolamientoEnSegundoPlano(JButton btnOrigen) {
+    new Thread(() -> {
+        btnOrigen.setEnabled(false);
+        btnOrigen.setText("Leyendo...");
+        txtHuella.setText("Esperando dedo (Vez 1)...");
+        
+        SensorHuellaService sensor = new SensorHuellaService("COM7");
+        
+        try {
+            if (!sensor.conectar()) {
+                JOptionPane.showMessageDialog(this, "No se pudo abrir el puerto COM7. Verifique el sensor.", "Hardware Error", JOptionPane.ERROR_MESSAGE);
+                txtHuella.setText("");
+                return;
+            }
+            
+            // --- CAPTURA 1 ---
+            boolean captura1 = false;
+            System.out.println("[BIOMETRÍA] Iniciando bucle de captura 1...");
+            for (int i = 0; i < 60; i++) { // Extendemos a 60 intentos (~15 segundos)
+                if (sensor.capturarFotoDedo()) {
+                    if (sensor.generarCaracteristicas(1)) {
+                        captura1 = true;
+                        break;
+                    }
+                }
+                Thread.sleep(250);
+            }
+            
+            if (!captura1) {
+                txtHuella.setText("Tiempo agotado / Error V1");
+                System.err.println("[BIOMETRÍA] Falló la primera captura por tiempo agotado.");
+                return;
+            }
+            
+            txtHuella.setText("¡Retire el dedo!");
+            System.out.println("[BIOMETRÍA] Captura 1 exitosa. Esperando liberación de sensor...");
+            Thread.sleep(2000); 
+            
+            // --- CAPTURA 2 ---
+            txtHuella.setText("Coloque el mismo dedo (Vez 2)...");
+            boolean captura2 = false;
+            for (int i = 0; i < 60; i++) {
+                if (sensor.capturarFotoDedo()) {
+                    if (sensor.generarCaracteristicas(2)) {
+                        captura2 = true;
+                        break;
+                    }
+                }
+                Thread.sleep(250);
+            }
+            
+            if (!captura2) {
+                txtHuella.setText("Error en confirmación V2");
+                System.err.println("[BIOMETRÍA] Falló la segunda captura.");
+                return;
+            }
+            
+            // --- CONSOLIDACIÓN Y DESCARGA HEX ---
+            txtHuella.setText("Modelando huella...");
+            System.out.println("[BIOMETRÍA] Creando modelo emparejado...");
+            if (sensor.crearModeloHuella()) {
+                // descargarTemplateDesdeSensor() internamente llamará a desconectar() al finalizar
+                String templateHex = sensor.descargarTemplateDesdeSensor();
+                
+                if (templateHex != null && !templateHex.isEmpty()) {
+                    txtHuella.setText(templateHex);
+                    JOptionPane.showMessageDialog(this, "¡Huella digital modelada con éxito! Ya puede guardar al usuario.", "Éxito Biométrico", JOptionPane.INFORMATION_MESSAGE);
+                } else {
+                    txtHuella.setText("Error al descargar buffer");
+                }
+            } else {
+                txtHuella.setText("Las huellas no coinciden");
+                System.err.println("[BIOMETRÍA] Las huellas del buffer 1 y 2 no se pudieron consolidar.");
+            }
+            
+        } catch (Exception ex) {
+            txtHuella.setText("Fallo: " + ex.getMessage());
+            ex.printStackTrace();
+        } finally {
+            // Aseguramos el estado de la UI y el cierre total del puerto físico por seguridad
+            try { sensor.desconectar(); } catch(Exception ignored){}
+            SwingUtilities.invokeLater(() -> {
+                btnOrigen.setText("Escanear");
+                btnOrigen.setEnabled(true);
+            });
+        }
+    }).start();
+}
 
     private void accionGuardar() {
         String[][] bloques = { 
@@ -431,7 +537,7 @@ public class MainAdmin extends JFrame {
         } catch(Exception e) { JOptionPane.showMessageDialog(this, "Error analítico: " + e.getMessage()); }
     }
 
-    // MÉTODOS AUXILIARES: PERSONALIZACIÓN ABSOLUTA DE COMPONENTES
+    // MÉTODOS AUXILIARES: PERSONALIZACIÓN DE COMPONENTES
     private void darEstiloBoton(JButton boton, Color colorFondo) {
         boton.setBackground(colorFondo); 
         boton.setForeground(Color.WHITE); 

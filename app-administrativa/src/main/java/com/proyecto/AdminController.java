@@ -147,26 +147,23 @@ public class AdminController {
         }
     }
 
-    /**
-     * BUSCADOR COMPUESTO: Filtra asistencias convirtiendo la hora de consulta a un String plano para evitar fallas de casteo.
-     */
-   /**
-     * BUSCADOR COMPUESTO: Filtra asistencias convirtiendo la hora de consulta a un String plano para evitar fallas de casteo.
-     * CORREGIDO: Se añade cast explícito (::DATE) para compatibilidad estricta con PostgreSQL/Supabase.
+  /**
+     * BUSCADOR COMPUESTO: Filtra asistencias convirtiendo la hora de consulta a un String plano.
+     * CORREGIDO: Se añade cast explícito (?::DATE) para compatibilidad estricta con PostgreSQL/Supabase.
      */
     public List<Object[]> filtrarAsistenciasPorSalon(String salon, String hora, String fecha) throws Exception {
         List<Object[]> lista = new ArrayList<>();
         
-        // FIX: Agregamos ::DATE a los parámetros que reciben la fecha para evitar el choque de tipos de datos
+        // CORRECCIÓN: Agregamos ::DATE a los parámetros que reciben la fecha string
         String sql = "SELECT h.matricula, h.materia, " +
-                     "COALESCE((SELECT 'ASISTIÓ ✔' FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND DATE(r.fecha_hora) = ?::DATE LIMIT 1), 'AUSENTE ❌') as estatus, " +
-                     "COALESCE((SELECT CAST(r.fecha_hora AS VARCHAR) FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND DATE(r.fecha_hora) = ?::DATE ORDER BY r.fecha_hora DESC LIMIT 1), 'Sin registros') as momento " +
+                     "COALESCE((SELECT 'ASISTIÓ ✔' FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND r.fecha_hora::DATE = ?::DATE LIMIT 1), 'AUSENTE ❌') as estatus, " +
+                     "COALESCE((SELECT CAST(r.fecha_hora AS VARCHAR) FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.fecha_hora::DATE = ?::DATE ORDER BY r.fecha_hora DESC LIMIT 1), 'Sin registros') as momento " +
                      "FROM horarios h WHERE h.salon LIKE ? AND CAST(h.hora_inicio AS VARCHAR) LIKE ?";
                      
         try (Connection con = ConexionSupabase.obtenerConexion();
              PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setString(1, fecha); // Ahora Postgres sabe que este texto se convertirá a ::DATE
-            ps.setString(2, fecha); // Lo mismo aquí
+            ps.setString(1, fecha); // El driver de Postgres mapeará el String usando el cast ::DATE
+            ps.setString(2, fecha); 
             ps.setString(3, "%" + salon + "%"); 
             
             String horaConsulta24 = normalizarHora24(hora, "BUSQUEDA");
@@ -193,10 +190,10 @@ public class AdminController {
      */
     public List<Object[]> consultarAsistenciaMaestrosPorFecha(String fecha) throws Exception {
         List<Object[]> lista = new ArrayList<>();
-        // FIX: Agregamos ::DATE al parámetro para que coincida con el tipo de la función DATE()
+        // CORRECCIÓN: Se cambia DATE(r.fecha_hora) por r.fecha_hora::DATE para estandarizar sintaxis en Supabase
         String sql = "SELECT u.matricula, u.nombre, r.salon_kiosko, r.fecha_hora " +
                      "FROM registro_accesos r INNER JOIN usuarios u ON r.matricula = u.matricula " +
-                     "WHERE u.rol = 'MAESTRO' AND DATE(r.fecha_hora) = ?::DATE AND r.permitido = true ORDER BY r.fecha_hora ASC";
+                     "WHERE u.rol = 'MAESTRO' AND r.fecha_hora::DATE = ?::DATE AND r.permitido = true ORDER BY r.fecha_hora ASC";
                      
         try (Connection con = ConexionSupabase.obtenerConexion();
              PreparedStatement ps = con.prepareStatement(sql)) {

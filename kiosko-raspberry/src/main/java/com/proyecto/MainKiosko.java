@@ -77,15 +77,50 @@ public class MainKiosko extends JFrame {
         pnlInferior.add(lblStatus); pnlInferior.add(lblConsejo);
         add(pnlInferior, BorderLayout.SOUTH);
 
-        // HILO DE EJECUCIÓN AUTÓNOMO (Concurrencia):
-        // Corre de forma asíncrona en bucle infinito simulando el pooling continuo del sensor de huellas.
-        // Esto evita congelar o trabar la pantalla gráfica mientras espera una lectura.
+        // HILO DE EJECUCIÓN AUTÓNOMO PARA HARDWARE REAL (AS608):
+        // Reemplaza el simulador para hacer un pooling continuo sobre el puerto serial sin congelar la GUI.
         new Thread(() -> {
-            while(true) {
-                // Simulación por cuadro de diálogo del escaner biométrico
-                String inputHuella = JOptionPane.showInputDialog(this, "Simulador de Lector Biométrico - Aula " + SALON_ACTUAL + ":");
-                if (inputHuella != null) {
-                    evaluarAccesoBiometrico(inputHuella.trim());
+            // Instanciamos el servicio apuntando al puerto de tu adaptador USB
+            // NOTA: Cuando lo pases a la Raspberry Pi, cambia "COM7" por "/dev/ttyUSB0"
+            SensorHuellaService sensor = new SensorHuellaService("COM7");
+
+            while (true) {
+                try {
+                    // 1. Intentar conectar al sensor si no está abierto
+                    if (sensor.conectar()) {
+                        lblConsejo.setText("💡 Lector AS608 en línea. Coloque su dedo sobre el sensor para pasar asistencia...");
+                        lblConsejo.setForeground(new Color(39, 174, 96)); // Verde indicador de hardware OK
+
+                        // 2. Pooling continuo esperando que se pose un dedo en el cristal
+                        if (sensor.capturarFotoDedo()) {
+                            
+                            // 3. Si detecta el dedo, procesa sus características en el buffer 1
+                            if (sensor.generarCaracteristicas(1)) {
+                                
+                                // 4. Descarga la matriz de bytes convertida a cadena Hexadecimal
+                                String inputHuellaReal = sensor.descargarTemplateDesdeSensor();
+                                
+                                if (inputHuellaReal != null && !inputHuellaReal.isEmpty()) {
+                                    System.out.println("Huella capturada en tiempo real: " + inputHuellaReal);
+                                    
+                                    // Enviamos el Hexadecimal real extraído al motor de reglas del Kiosko
+                                    evaluarAccesoBiometrico(inputHuellaReal.trim());
+                                }
+                            }
+                            
+                            // Pausa preventiva para evitar lecturas duplicadas inmediatas del mismo dedo
+                            Thread.sleep(3000);
+                        }
+                    } else {
+                        lblConsejo.setText("❌ Error: No se detecta el lector de huellas en el puerto asignado.");
+                        lblConsejo.setForeground(Color.RED);
+                    }
+                    
+                    // Frecuencia de muestreo del sensor en reposo (250 milisegundos)
+                    Thread.sleep(250);
+                    
+                } catch (Exception e) {
+                    System.err.println("Error en el bucle del hardware biométrico: " + e.getMessage());
                 }
             }
         }).start();

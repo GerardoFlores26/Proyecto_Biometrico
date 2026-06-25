@@ -81,7 +81,6 @@ public class MainKiosko extends JFrame {
         // Reemplaza el simulador para hacer un pooling continuo sobre el puerto serial sin congelar la GUI.
         new Thread(() -> {
             // Instanciamos el servicio apuntando al puerto de tu adaptador USB
-            // NOTA: Cuando lo pases a la Raspberry Pi, cambia "COM7" por "/dev/ttyUSB0"
             SensorHuellaService sensor = new SensorHuellaService("COM7");
 
             while (true) {

@@ -129,7 +129,7 @@ public class MainAdmin extends JFrame {
         gbcD.gridx = 0; gbcD.gridy = 3; pnlDatos.add(new JLabel("Carrera/Depto:"), gbcD);
         txtCarrera = new JTextField(15); gbcD.gridx = 1; pnlDatos.add(txtCarrera, gbcD);
         
-        // INTEGRACIÓN DEL BOTÓN DE HARDWARE PARA CAPTURA BIOMÉTRICA
+        //  BOTÓN DE HARDWARE PARA CAPTURA BIOMÉTRICA
         gbcD.gridx = 0; gbcD.gridy = 4; pnlDatos.add(new JLabel("Huella Hex:"), gbcD);
         
         JPanel pnlHuellaFisica = new JPanel(new BorderLayout(5, 0));
@@ -373,9 +373,9 @@ public class MainAdmin extends JFrame {
         tabs.addTab("Buscador por Salón", panel);
     }
 
-    // =========================================================================
+   
     // LÓGICA DE CONTROLADOR Y EVENTOS
-    // =========================================================================
+    
 
    private void ejecutarEnrolamientoEnSegundoPlano(JButton btnOrigen) {
     new Thread(() -> {
@@ -456,7 +456,7 @@ public class MainAdmin extends JFrame {
             txtHuella.setText("Fallo: " + ex.getMessage());
             ex.printStackTrace();
         } finally {
-            // Aseguramos el estado de la UI y el cierre total del puerto físico por seguridad
+            // se asegura el estado de la UI y el cierre total del puerto físico por seguridad
             try { sensor.desconectar(); } catch(Exception ignored){}
             SwingUtilities.invokeLater(() -> {
                 btnOrigen.setText("Escanear");

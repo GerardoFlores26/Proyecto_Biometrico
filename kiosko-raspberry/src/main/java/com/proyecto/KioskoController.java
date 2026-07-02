@@ -20,33 +20,36 @@ public class KioskoController {
      * Almacena todo en un HashMap estructurado donde la LLAVE es la Huella Digital del usuario.
      * Esto permite búsquedas O(1) instantáneas cuando alguien pone el dedo en el sensor.
      */
-    public Map<String, List<String[]>> descargarMatrizHorarios() {
-        Map<String, List<String[]>> cache = new HashMap<>();
-        String sql = "SELECT u.huella_template, h.matricula, h.hora_inicio, h.salon, h.materia " +
-                     "FROM horarios h INNER JOIN usuarios u ON h.matricula = u.matricula";
-                     
-        try (Connection con = ConexionSupabase.obtenerConexion();
-             PreparedStatement ps = con.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
+   public Map<String, List<String[]>> descargarMatrizHorarios() {
+    Map<String, List<String[]>> cache = new HashMap<>();
+    // Cambiado a LEFT JOIN desde usuarios para traer a TODOS los alumnos con o sin clases agendadas
+    String sql = "SELECT u.huella_template, u.matricula, h.hora_inicio, h.salon, h.materia " +
+                 "FROM usuarios u LEFT JOIN horarios h ON u.matricula = h.matricula";
+                 
+    try (Connection con = ConexionSupabase.obtenerConexion();
+         PreparedStatement ps = con.prepareStatement(sql);
+         ResultSet rs = ps.executeQuery()) {
+        
+        while(rs.next()) {
+            String huella = rs.getString("huella_template");
             
-            while(rs.next()) {
-                String huella = rs.getString("huella_template");
-                // Estructura interna de los datos mapeados en memoria RAM
-                String[] datos = { 
-                    rs.getString("matricula"), 
-                    rs.getString("hora_inicio"), 
-                    rs.getString("salon"), 
-                    rs.getString("materia") 
-                };
-                
-                // Si la huella no existe en el mapa, crea una lista nueva; si ya existe, añade el horario
-                cache.computeIfAbsent(huella, k -> new ArrayList<>()).add(datos);
-            }
-        } catch (Exception e) { 
-            System.err.println("CRITICAL: Caída de enlace de red al sincronizar caché: " + e.getMessage()); 
+            // Si la huella de la base de datos es nula o vacía, la ignoramos de la caché para evitar errores
+            if (huella == null || huella.trim().isEmpty()) continue;
+
+            String[] datos = { 
+                rs.getString("matricula"), 
+                rs.getString("hora_inicio") != null ? rs.getString("hora_inicio") : "SIN_HORARIO", 
+                rs.getString("salon") != null ? rs.getString("salon") : "LIBRE", 
+                rs.getString("materia") != null ? rs.getString("materia") : "SIN_MATERIA" 
+            };
+            
+            cache.computeIfAbsent(huella, k -> new ArrayList<>()).add(datos);
         }
-        return cache;
+    } catch (Exception e) { 
+        System.err.println("CRITICAL: Caída de enlace de red al sincronizar caché: " + e.getMessage()); 
     }
+    return cache;
+}
 
     /**
      * MÓDULO DE REGLAS DE TIEMPO REAL:

@@ -6,7 +6,8 @@ import java.util.List;
 
 /**
  * CONTROLADOR ADMINISTRATIVO (MVC - PATRÓN DE AISLAMIENTO)
- * Corregido para evitar falsos positivos en la conversión automática de turnos.
+ *  almacenamiento efectivo de huellas dactilares en Supabase
+
  */
 public class AdminController {
 
@@ -31,21 +32,25 @@ public class AdminController {
         int horaInt = Integer.parseInt(partes[0]);
         int minutos = Integer.parseInt(partes[1].substring(0, 2)); // Evita segundos pegados si los hay
         
-        // REMOVIDO EL DESFASE AUTOMÁTICO REBELDE: 
-        // Dejamos que la hora que se seleccione o registre sea exactamente la que se busca.
         return String.format("%02d:%02d:00", horaInt, minutos);
     }
 
     /**
      * Guarda de forma atómica un usuario y su matriz completa de 4 horas académicas.
+     
      */
     public boolean guardarUsuarioYHorarios(String mat, String nom, String rol, String car, String hue, String[][] bloques) throws Exception {
+        // CORRECCIÓN: Optimizamos la actualización para asegurar que la huella se escriba correctamente 
+        // si se proporciona un template válido, y que no se machuque con strings vacíos.
         String sqlUser = "INSERT INTO usuarios (matricula, nombre, rol, carrera, huella_template) VALUES (?, ?, ?, ?, ?) " +
                          "ON CONFLICT (matricula) DO UPDATE SET " +
                          "nombre = COALESCE(NULLIF(EXCLUDED.nombre, ''), usuarios.nombre), " +
                          "rol = EXCLUDED.rol, " +
                          "carrera = COALESCE(NULLIF(EXCLUDED.carrera, ''), usuarios.carrera), " +
-                         "huella_template = COALESCE(NULLIF(EXCLUDED.huella_template, ''), usuarios.huella_template)";
+                         "huella_template = CASE " +
+                         "    WHEN EXCLUDED.huella_template IS NOT NULL AND EXCLUDED.huella_template <> '' THEN EXCLUDED.huella_template " +
+                         "    ELSE usuarios.huella_template " +
+                         "END";
 
         String sqlHorario = "INSERT INTO horarios (matricula, hora_inicio, salon, materia) VALUES (?, ?, ?, ?) " +
                             "ON CONFLICT (matricula, hora_inicio) DO UPDATE SET salon = EXCLUDED.salon, materia = EXCLUDED.materia";
@@ -60,7 +65,14 @@ public class AdminController {
                 psUser.setString(2, nom); 
                 psUser.setString(3, rol); 
                 psUser.setString(4, car); 
-                psUser.setString(5, hue);
+                
+                // Si la huella viene nula o contiene textos de pruebas erróneos (como longitudes 9 o 10), mandamos vacío
+                if (hue == null || hue.trim().isEmpty() || hue.length() < 50) {
+                    psUser.setString(5, null);
+                } else {
+                    psUser.setString(5, hue.trim());
+                }
+                
                 psUser.executeUpdate();
 
                 for (String[] b : bloques) {
@@ -97,7 +109,10 @@ public class AdminController {
             ps.setString(1, rol);
             try (ResultSet rs = ps.executeQuery()) {
                 while(rs.next()) {
-                    String estatusHuella = (rs.getString("huella_template") == null || rs.getString("huella_template").isEmpty()) ? "Sin Registrar" : "ACTIVA ✔";
+                    String ht = rs.getString("huella_template");
+                    
+                    String estatusHuella = (ht == null || ht.trim().isEmpty() || ht.length() < 100) ? "Sin Registrar" : "ACTIVA ✔";
+                    
                     lista.add(new Object[]{
                         rs.getString("matricula"), 
                         rs.getString("nombre"), 
@@ -147,14 +162,12 @@ public class AdminController {
         }
     }
 
-  /**
+    /**
      * BUSCADOR COMPUESTO: Filtra asistencias convirtiendo la hora de consulta a un String plano.
-     * CORREGIDO: Se añade cast explícito (?::DATE) para compatibilidad estricta con PostgreSQL/Supabase.
      */
     public List<Object[]> filtrarAsistenciasPorSalon(String salon, String hora, String fecha) throws Exception {
         List<Object[]> lista = new ArrayList<>();
         
-        // CORRECCIÓN: Agregamos ::DATE a los parámetros que reciben la fecha string
         String sql = "SELECT h.matricula, h.materia, " +
                      "COALESCE((SELECT 'ASISTIÓ ✔' FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND r.fecha_hora::DATE = ?::DATE LIMIT 1), 'AUSENTE ❌') as estatus, " +
                      "COALESCE((SELECT CAST(r.fecha_hora AS VARCHAR) FROM registro_accesos r WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.fecha_hora::DATE = ?::DATE ORDER BY r.fecha_hora DESC LIMIT 1), 'Sin registros') as momento " +
@@ -162,7 +175,7 @@ public class AdminController {
                      
         try (Connection con = ConexionSupabase.obtenerConexion();
              PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setString(1, fecha); // El driver de Postgres mapeará el String usando el cast ::DATE
+            ps.setString(1, fecha); 
             ps.setString(2, fecha); 
             ps.setString(3, "%" + salon + "%"); 
             
@@ -184,13 +197,11 @@ public class AdminController {
         return lista;
     }
 
- /**
+    /**
      * VISTA DE AUDITORÍA UNIFICADA PARA DOCENTES
-     * CORREGIDO: Se añade el cast explicito (?::DATE) para solucionar el error analítico de Postgres.
      */
     public List<Object[]> consultarAsistenciaMaestrosPorFecha(String fecha) throws Exception {
         List<Object[]> lista = new ArrayList<>();
-        // CORRECCIÓN: Se cambia DATE(r.fecha_hora) por r.fecha_hora::DATE para estandarizar sintaxis en Supabase
         String sql = "SELECT u.matricula, u.nombre, r.salon_kiosko, r.fecha_hora " +
                      "FROM registro_accesos r INNER JOIN usuarios u ON r.matricula = u.matricula " +
                      "WHERE u.rol = 'MAESTRO' AND r.fecha_hora::DATE = ?::DATE AND r.permitido = true ORDER BY r.fecha_hora ASC";
@@ -213,6 +224,7 @@ public class AdminController {
         }
         return lista;
     }
+
     /**
      * MONITOR DE HISTORIAL EN TIEMPO REAL
      */

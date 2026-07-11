@@ -174,31 +174,42 @@ public class SensorHuellaService {
         return false;
     }
 
-    public String descargarTemplateDesdeSensor() {
+ public String descargarTemplateDesdeSensor() {
         try {
             byte[] datos = {(byte) 0x01}; 
             byte[] respuesta = enviarComando((byte) 0x08, datos);
             
             if (respuesta != null && respuesta.length >= 10 && respuesta[9] == 0x00) {
-                Thread.sleep(100);
-                byte[] rawPackets = leerRespuestaDinamica(600); 
+                // Damos tiempo suficiente para que el sensor mande toda la ráfaga de datos
+                Thread.sleep(200);
+                byte[] rawPackets = leerRespuestaDinamica(800); 
                 
                 if (rawPackets != null && rawPackets.length > 20) {
                     StringBuilder hex = new StringBuilder();
+                    int i = 0;
                     
-                    for (int i = 0; i < rawPackets.length; i++) {
-                        if (i <= rawPackets.length - 2 && rawPackets[i] == (byte)0xEF && rawPackets[i+1] == (byte)0x01) {
-                            i += 8; 
-                            continue;
+                    // Escaneamos el flujo de bytes buscando las cabeceras de los paquetes
+                    while (i < rawPackets.length - 9) {
+                        if (rawPackets[i] == (byte) 0xEF && rawPackets[i+1] == (byte) 0x01) {
+                            
+                            // Calculamos cuánto mide la carga útil de este paquete
+                            int len = ((rawPackets[i+7] & 0xFF) << 8) | (rawPackets[i+8] & 0xFF);
+                            int dataLength = len - 2; // Descartamos los 2 bytes finales de Checksum
+                            
+                            // Extraemos y concatenamos estrictamente la huella pura
+                            for (int j = 0; j < dataLength; j++) {
+                                if ((i + 9 + j) < rawPackets.length) {
+                                    hex.append(String.format("%02X", rawPackets[i + 9 + j]));
+                                }
+                            }
+                            
+                            // Brincamos al siguiente paquete: Cabecera (9) + Datos + Checksum (2)
+                            i += (9 + dataLength + 2);
+                        } else {
+                            i++; // Seguimos buscando si hay ruido
                         }
-                        hex.append(String.format("%02X", rawPackets[i]));
                     }
-                    
-                    String resultadoFinal = hex.toString();
-                    if (resultadoFinal.length() > 32) {
-                        resultadoFinal = resultadoFinal.substring(0, resultadoFinal.length() - 4);
-                    }
-                    return resultadoFinal;
+                    return hex.toString();
                 }
             }
         } catch (Exception ex) {

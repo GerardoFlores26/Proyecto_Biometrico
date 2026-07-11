@@ -5,7 +5,6 @@ import java.util.Arrays;
 
 /**
  * SERVICIO DE CONTROL PARA EL SENSOR DE HUELLA AS608 (Protocolo Serial)
- 
  */
 public class SensorHuellaService {
 
@@ -21,32 +20,32 @@ public class SensorHuellaService {
     }
 
     public boolean conectar() {
-    if (puertoSerial != null && puertoSerial.isOpen()) {
-        return true;
-    }
+        if (puertoSerial != null && puertoSerial.isOpen()) {
+            return true;
+        }
 
-    puertoSerial = SerialPort.getCommPort(nombrePuerto);
-    puertoSerial.setBaudRate(BAUD_RATE);
-    puertoSerial.setNumDataBits(8);
-    puertoSerial.setNumStopBits(SerialPort.ONE_STOP_BIT);
-    puertoSerial.setParity(SerialPort.NO_PARITY);
-    
-    puertoSerial.setComPortTimeouts(SerialPort.TIMEOUT_NONBLOCKING, 0, 0);
+        puertoSerial = SerialPort.getCommPort(nombrePuerto);
+        puertoSerial.setBaudRate(BAUD_RATE);
+        puertoSerial.setNumDataBits(8);
+        puertoSerial.setNumStopBits(SerialPort.ONE_STOP_BIT);
+        puertoSerial.setParity(SerialPort.NO_PARITY);
+        
+        puertoSerial.setComPortTimeouts(SerialPort.TIMEOUT_NONBLOCKING, 0, 0);
 
-    if (puertoSerial.openPort()) {
-        System.out.println("✔ Conectado exitosamente al sensor en el puerto: " + nombrePuerto);
-        puertoSerial.flushIOBuffers();
-        
-        // Forzamos el true para que el Kiosko continúe aunque el módulo tenga otra clave de fábrica
-        verificarContrasena(); 
-        System.out.println("✔ Sincronización del puerto serial forzada para el Kiosko.");
-        return true; 
-        
-    } else {
-        System.err.println("❌ No se pudo abrir el puerto: " + nombrePuerto);
-        return false;
+        if (puertoSerial.openPort()) {
+            System.out.println("✔ Conectado exitosamente al sensor en el puerto: " + nombrePuerto);
+            puertoSerial.flushIOBuffers();
+            
+            // Forzamos el true para que el Kiosko continúe aunque el módulo tenga otra clave de fábrica
+            verificarContrasena(); 
+            System.out.println("✔ Sincronización del puerto serial forzada para el Kiosko.");
+            return true; 
+            
+        } else {
+            System.err.println("❌ No se pudo abrir el puerto: " + nombrePuerto);
+            return false;
+        }
     }
-}
 
     public void desconectar() {
         if (puertoSerial != null && puertoSerial.isOpen()) {
@@ -208,14 +207,14 @@ public class SensorHuellaService {
     }
 
     /**
-     * MÓDULO KIOSKO (1:1 MATCH OFICIAL): Compara las características del dedo puesto (Buffer 1)
-     * directamente contra la cadena Hexadecimal de Supabase.
+     * MÓDULO KIOSKO (1:1 MATCH OFICIAL por fragmentos): Descarga la huella de Supabase 
+     * y la envía al Buffer 2 del sensor en paquetes de 128 bytes para evitar saturarlo.
      */
     public boolean verificarDedoContraSupabase(String hexTemplateSupabase) {
         if (hexTemplateSupabase == null || hexTemplateSupabase.length() < 100) return false;
         
         try {
-            // 1. Convertir el String Hex de Supabase a arreglo de bytes puros
+            // 1. Convertir el mega-string a un arreglo de bytes
             int len = hexTemplateSupabase.length();
             byte[] bytesTemplate = new byte[len / 2];
             for (int i = 0; i < len; i += 2) {
@@ -223,33 +222,71 @@ public class SensorHuellaService {
                                      + Character.digit(hexTemplateSupabase.charAt(i+1), 16));
             }
             
-            // 2. Estructurar el payload del comando 0x12 (Buffer 1 + Bytes del template)
-            byte[] payloadComando = new byte[1 + bytesTemplate.length];
-            payloadComando[0] = (byte) 0x01; // Contraste contra el Buffer de caracteres 1
-            System.arraycopy(bytesTemplate, 0, payloadComando, 1, bytesTemplate.length);
+            // 2. Avisarle al sensor que le vamos a enviar una huella al Buffer 2 (0x09 = DownChar)
+            byte[] cmdDownChar = {(byte) 0x02}; 
+            byte[] resDown = enviarComando((byte) 0x09, cmdDownChar);
+            if (resDown == null || resDown.length < 10 || resDown[9] != 0x00) {
+                System.out.println("[KIOSKO] Error hardware: El sensor rechazó preparar su memoria.");
+                return false;
+            }
+
+            // 3. Enviar los paquetes de datos en "mordidas" de 128 bytes
+            int offset = 0;
+            int chunkSize = 128;
+            while (offset < bytesTemplate.length) {
+                int remain = bytesTemplate.length - offset;
+                int currentChunk = Math.min(chunkSize, remain);
+                boolean isLast = (offset + currentChunk >= bytesTemplate.length);
+                
+                // 0x08 = Último paquete de datos, 0x02 = Paquete intermedio
+                byte pid = isLast ? (byte) 0x08 : (byte) 0x02; 
+                int packetLen = currentChunk + 2; // Datos + 2 bytes de Checksum
+                
+                byte[] packet = new byte[9 + currentChunk + 2];
+                packet[0] = (byte) 0xEF; packet[1] = (byte) 0x01; // Cabecera fija
+                packet[2] = (byte) 0xFF; packet[3] = (byte) 0xFF; // Dirección
+                packet[4] = (byte) 0xFF; packet[5] = (byte) 0xFF;
+                packet[6] = pid;
+                packet[7] = (byte) (packetLen >> 8);
+                packet[8] = (byte) (packetLen & 0xFF);
+                
+                // Copiamos el fragmento de huella al paquete
+                System.arraycopy(bytesTemplate, offset, packet, 9, currentChunk);
+                
+                // Matemáticas de seguridad (Checksum) para que el sensor valide el paquete
+                int sum = (pid & 0xFF) + (packetLen >> 8) + (packetLen & 0xFF);
+                for (int i = 0; i < currentChunk; i++) {
+                    sum += (packet[9 + i] & 0xFF);
+                }
+                packet[9 + currentChunk] = (byte) (sum >> 8);
+                packet[9 + currentChunk + 1] = (byte) (sum & 0xFF);
+                
+                // Enviamos el trozo por el cable serial
+                if (puertoSerial != null && puertoSerial.isOpen()) {
+                    puertoSerial.writeBytes(packet, packet.length);
+                }
+                offset += currentChunk;
+            }
             
-            // 3. Enviamos la instrucción 0x12 (MatchTemplate)
-            byte[] respuesta = enviarComando((byte) 0x12, payloadComando);
-            
-            // 4. Analizar la respuesta de control de hardware de forma segura
-            if (respuesta != null && respuesta.length >= 10) {
-                byte codigoConfirmacion = respuesta[9];
-                if (codigoConfirmacion == 0x00) {
-                    // El comando responde con éxito y devuelve la puntuación en los bytes siguientes
-                    int score = 0;
-                    if (respuesta.length >= 12) {
-                        score = ((respuesta[10] & 0xFF) << 8) | (respuesta[11] & 0xFF);
-                    }
-                    System.out.println("[KIOSKO] Match evaluado por hardware. Score obtenido: " + score);
-                    return score >= 35; 
-                } else if (codigoConfirmacion == 0x01) {
-                    System.out.println("[KIOSKO] El hardware completó el análisis: Las huellas no coinciden.");
+            // PASO 4 ELIMINADO: El sensor AS608 no envía confirmación tras los paquetes de datos.
+            // Solo pausamos 100 milisegundos para que el chip termine de guardar la huella en su RAM.
+            Thread.sleep(100);
+
+            // 5. El gran momento: Comparar Dedo Puesto (Buffer 1) vs Huella Descargada (Buffer 2) (0x03 = Match)
+            byte[] resMatch = enviarComando((byte) 0x03, null);
+            if (resMatch != null && resMatch.length >= 10) {
+                if (resMatch[9] == 0x00) {
+                    int score = ((resMatch[10] & 0xFF) << 8) | (resMatch[11] & 0xFF);
+                    System.out.println("[KIOSKO] Match evaluado por hardware. Score: " + score);
+                    return score >= 35; // Puntaje de seguridad
+                } else if (resMatch[9] == 0x08) {
+                    System.out.println("[KIOSKO] Las huellas NO coinciden (El sensor dice que es otro dedo).");
                 } else {
-                    System.out.println("[KIOSKO] Código de respuesta inesperado en Match: " + String.format("%02X", codigoConfirmacion));
+                    System.out.println("[KIOSKO] Código inesperado en Match: " + String.format("%02X", resMatch[9]));
                 }
             }
         } catch (Exception e) {
-            System.err.println("[KIOSKO] Error analítico en emparejamiento biométrico: " + e.getMessage());
+            System.err.println("[KIOSKO] Error procesando paquetes biométricos: " + e.getMessage());
         }
         return false;
     }

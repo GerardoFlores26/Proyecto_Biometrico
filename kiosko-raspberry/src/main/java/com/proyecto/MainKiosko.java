@@ -130,7 +130,7 @@ public class MainKiosko extends JFrame {
 
         if (cacheHorarios == null || cacheHorarios.isEmpty()) {
             System.out.println("[⚠️ ALERTA KIOSKO] La caché está completamente vacía. Revisa la descarga de horarios.");
-            actualizarPantalla("ACCESO DENEGADO ❌", "SISTEMA SIN DATOS LOCALES", new Color(231, 76, 60));
+            actualizarPantalla("ACCESO DENEGADO ", "SISTEMA SIN DATOS LOCALES", new Color(231, 76, 60));
             return;
         }
 
@@ -173,13 +173,13 @@ public class MainKiosko extends JFrame {
                 String materiaNombre = bloqueEncontrado[3];
 
                 if (salonAsignado.equalsIgnoreCase(SALON_ACTUAL)) {
-                    actualizarPantalla("ASISTENCIA REGISTRADA ✔", "MATRÍCULA: " + mat + " (" + materiaNombre + ")", new Color(46, 204, 113));
+                    actualizarPantalla("ASISTENCIA REGISTRADA ", "MATRÍCULA: " + mat + " (" + materiaNombre + ")", new Color(46, 204, 113));
                     controlador.registrarLogAcceso(mat, true, "Clase: " + materiaNombre + " en " + SALON_ACTUAL, SALON_ACTUAL);
                 } else if (salonAsignado.equals("LIBRE")) {
                     actualizarPantalla("HORA LIBRE", "MATRÍCULA: " + mat, new Color(20, 80, 160));
                     controlador.registrarLogAcceso(mat, false, "El usuario cuenta con Hora Libre.", SALON_ACTUAL);
                 } else {
-                    actualizarPantalla("SALÓN EQUIVOCADO ❌", "DEBES IR A: " + salonAsignado, new Color(231, 76, 60));
+                    actualizarPantalla("SALÓN EQUIVOCADO ", "DEBES IR A: " + salonAsignado, new Color(231, 76, 60));
                     controlador.registrarLogAcceso(mat, false, "Debió asistir a " + salonAsignado, SALON_ACTUAL);
                 }
             } else {
@@ -189,7 +189,7 @@ public class MainKiosko extends JFrame {
             }
         } else {
             System.out.println("[KIOSKO] Análisis completado: No se encontró ninguna coincidencia biométrica válida.");
-            actualizarPantalla("ACCESO DENEGADO ❌", "HUELLA DESCONOCIDA", new Color(231, 76, 60));
+            actualizarPantalla("ACCESO DENEGADO ", "HUELLA DESCONOCIDA", new Color(231, 76, 60));
             controlador.registrarLogAcceso(null, false, "Intento con huella no registrada o rechazada.", SALON_ACTUAL);
         }
     }

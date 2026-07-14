@@ -5,23 +5,28 @@ import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
 import java.util.List;
 
 /**
  * VISTA ADMINISTRATIVA PRINCIPAL - INTEGRACIÓN BIOMÉTRICA AS608 Y SUPABASE
+ * Capa de presentación (UI) de la Arquitectura Decoupled MVC.
  */
 public class MainAdmin extends JFrame {
     
     private AdminController controlador = new AdminController();
 
     // Paleta de Diseño Institucional Unificada
-    private static final Color AZUL_OBSCURO = new Color(21, 67, 96);   // Encabezados y títulos principales
-    private static final Color AZUL_MEDIO = new Color(41, 128, 185);   // Fondo de botones principales
-    private static final Color FONDO_GRIS_LIGERO = new Color(245, 247, 250); // Fondo general de la ventana
-    private static final Color AZUL_SELECCION = new Color(235, 245, 251);   // Filas seleccionadas
+    private static final Color AZUL_OBSCURO = new Color(21, 67, 96);   
+    private static final Color AZUL_MEDIO = new Color(41, 128, 185);   
+    private static final Color FONDO_GRIS_LIGERO = new Color(245, 247, 250); 
+    private static final Color AZUL_SELECCION = new Color(235, 245, 251);   
     private static final Color ROJO_ERROR = new Color(231, 76, 60);
     private static final Color VERDE_EXITO = new Color(39, 174, 96);
+    private static final Color VERDE_EXCEL = new Color(33, 115, 70);
     
     private static final Font FUENTE_SANS = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font FUENTE_NEGRITA = new Font("Segoe UI", Font.BOLD, 13);
@@ -40,7 +45,7 @@ public class MainAdmin extends JFrame {
     // Componentes de otras pestañas
     private DefaultTableModel modeloAlumnos, modeloHorarioAlumno, modeloFiltroSalon;
     private DefaultTableModel modeloMaestros, modeloHistorialMaestros; 
-    private JTable tablaAlumnos, tablaMaestros;
+    private JTable tablaAlumnos, tablaMaestros, tablaFiltro;
     private JTextField txtBuscarSalon, txtBuscarFecha, txtFechaMaestros;
     private JComboBox<String> cbBuscarHora;
 
@@ -54,7 +59,6 @@ public class MainAdmin extends JFrame {
         JTabbedPane panelPestañas = new JTabbedPane();
         panelPestañas.setFont(FUENTE_NEGRITA);
 
-        // Carga de los módulos en pestañas
         armarPestañaRegistro(panelPestañas);
         armarPestañaBaseAlumnos(panelPestañas);
         armarPestañaBaseMaestros(panelPestañas); 
@@ -62,8 +66,8 @@ public class MainAdmin extends JFrame {
 
         add(panelPestañas);
 
-        // Hilo de refresco del monitor (Cada 1.5 segundos)
-        Timer timerIngresoTiempoReal = new Timer(1500, e -> refrescarHistorialMonitorEnVivo());
+        // Temporizador del monitor (Cada 5 segundos para no saturar Supabase)
+        Timer timerIngresoTiempoReal = new Timer(5000, e -> refrescarHistorialMonitorEnVivo());
         timerIngresoTiempoReal.setRepeats(true);
         timerIngresoTiempoReal.start();
     }
@@ -75,10 +79,10 @@ public class MainAdmin extends JFrame {
                 modeloMonitor.setRowCount(0);
                 for (Object[] registro : logsRecientes) {
                     modeloMonitor.addRow(new Object[]{
-                        registro[0], // Matricula
-                        registro[3], // Hora Formateada (HH:mm:ss)
-                        registro[4], // Estatus (OK / NO)
-                        registro[5]  // Motivo Final
+                        registro[0], 
+                        registro[3], 
+                        registro[4], 
+                        registro[5]  
                     });
                 }
                 pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
@@ -86,21 +90,21 @@ public class MainAdmin extends JFrame {
                     0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
             }
         } catch (Exception ex) {
+            // IMPRESIÓN FORZADA EN CONSOLA PARA DETECTAR EL PROBLEMA DE RED
+            System.err.println("=== 🚨 FALLA DE CONEXIÓN EN MONITOR Escolar 🚨 ===");
+            ex.printStackTrace();
+            
             pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(ROJO_ERROR, 1), " MONITOR - ERROR DE CONEXIÓN ", 
                 0, 0, FUENTE_NEGRITA, ROJO_ERROR));
         }
     }
 
-    /**
-     * PESTAÑA PRINCIPAL: REGISTRO Y MONITOR INTEGRADO
-     */
     private void armarPestañaRegistro(JTabbedPane tabs) {
         JPanel panelPrincipal = new JPanel(new GridBagLayout());
         panelPrincipal.setBackground(FONDO_GRIS_LIGERO);
         GridBagConstraints gbcMaster = new GridBagConstraints();
 
-        // PANEL IZQUIERDO: FORMULARIO DE CAPTURA
         JPanel pnlIzquierdo = new JPanel(new GridBagLayout());
         pnlIzquierdo.setBackground(Color.WHITE);
         pnlIzquierdo.setBorder(BorderFactory.createCompoundBorder(
@@ -111,7 +115,6 @@ public class MainAdmin extends JFrame {
         gbcForm.insets = new Insets(5, 5, 5, 5);
         gbcForm.fill = GridBagConstraints.HORIZONTAL;
 
-        // Sub-panel 1: Datos de Usuario
         JPanel pnlDatos = new JPanel(new GridBagLayout());
         pnlDatos.setBackground(Color.WHITE);
         pnlDatos.setBorder(BorderFactory.createTitledBorder(
@@ -129,7 +132,6 @@ public class MainAdmin extends JFrame {
         gbcD.gridx = 0; gbcD.gridy = 3; pnlDatos.add(new JLabel("Carrera/Depto:"), gbcD);
         txtCarrera = new JTextField(15); gbcD.gridx = 1; pnlDatos.add(txtCarrera, gbcD);
         
-        //  BOTÓN DE HARDWARE PARA CAPTURA BIOMÉTRICA
         gbcD.gridx = 0; gbcD.gridy = 4; pnlDatos.add(new JLabel("Huella Hex:"), gbcD);
         
         JPanel pnlHuellaFisica = new JPanel(new BorderLayout(5, 0));
@@ -151,7 +153,6 @@ public class MainAdmin extends JFrame {
         gbcForm.gridx = 0; gbcForm.gridy = 0; gbcForm.weightx = 1.0;
         pnlIzquierdo.add(pnlDatos, gbcForm);
 
-        // Sub-panel 2: Carga de Turnos (Formatos Base)
         JPanel pnlMatriz = new JPanel(new GridBagLayout());
         pnlMatriz.setBackground(Color.WHITE);
         pnlMatriz.setBorder(BorderFactory.createTitledBorder(
@@ -184,8 +185,7 @@ public class MainAdmin extends JFrame {
         gbcForm.gridy = 1; gbcForm.insets = new Insets(10, 5, 5, 5);
         pnlIzquierdo.add(pnlMatriz, gbcForm);
 
-        // Botón de Guardado
-        JButton btnGuardar = new JButton("GUARDAR MATRIZ ACADÉMICA");
+        JButton btnGuardar = new JButton("GUARDAR");
         darEstiloBoton(btnGuardar, AZUL_MEDIO);
         
         gbcForm.gridy = 2;
@@ -194,14 +194,12 @@ public class MainAdmin extends JFrame {
         gbcForm.insets = new Insets(20, 5, 5, 5);
         pnlIzquierdo.add(btnGuardar, gbcForm);
 
-        // Ubicar formulario en el contenedor maestro
         gbcMaster.gridx = 0; gbcMaster.gridy = 0;
         gbcMaster.weightx = 0.45; gbcMaster.weighty = 1.0;
         gbcMaster.fill = GridBagConstraints.BOTH;
         gbcMaster.insets = new Insets(10, 10, 10, 5);
         panelPrincipal.add(pnlIzquierdo, gbcMaster);
 
-        // PANEL DERECHO: MONITOR DE ACCESOS
         pnlMonitorContenedor = new JPanel(new BorderLayout());
         pnlMonitorContenedor.setBackground(Color.WHITE);
         pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
@@ -215,7 +213,6 @@ public class MainAdmin extends JFrame {
         tablaMonitor = new JTable(modeloMonitor);
         estilizarTablaGeneral(tablaMonitor);
 
-        // Renderizador de alertas (OK / NO)
         tablaMonitor.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object val, boolean isSel, boolean hasFoc, int row, int col) {
@@ -249,15 +246,11 @@ public class MainAdmin extends JFrame {
         gbcMaster.insets = new Insets(10, 5, 10, 10);
         panelPrincipal.add(pnlMonitorContenedor, gbcMaster);
 
-        // Disparadores de Acción
         btnEscanearHuella.addActionListener(e -> ejecutarEnrolamientoEnSegundoPlano(btnEscanearHuella));
         btnGuardar.addActionListener(e -> accionGuardar());
-        tabs.addTab("Matriz de Registro", panelPrincipal);
+        tabs.addTab(" Registro", panelPrincipal);
     }
 
-    /**
-     * PESTAÑA 2: BASE DE ESTUDIANTES
-     */
     private void armarPestañaBaseAlumnos(JTabbedPane tabs) {
         JPanel panel = new JPanel(new BorderLayout(15, 15));
         panel.setBackground(FONDO_GRIS_LIGERO);
@@ -296,9 +289,6 @@ public class MainAdmin extends JFrame {
         tabs.addTab("Base Estudiantes", panel);
     }
 
-    /**
-     * PESTAÑA 3: BASE Y ASISTENCIA DE MAESTROS
-     */
     private void armarPestañaBaseMaestros(JTabbedPane tabs) {
         JPanel panel = new JPanel(new BorderLayout(15, 15));
         panel.setBackground(FONDO_GRIS_LIGERO);
@@ -342,129 +332,195 @@ public class MainAdmin extends JFrame {
         btnRefrescar.addActionListener(e -> cargarUsuariosPorRol("MAESTRO", modeloMaestros));
         btnEliminar.addActionListener(e -> accionEliminar(tablaMaestros, modeloMaestros));
 
-        tabs.addTab("Base y Asistencia Maestros", panel);
+        tabs.addTab("BD,Asistencia Maestros", panel);
     }
 
-    /**
-     * PESTAÑA 4: BUSCADOR POR SALÓN
-     */
     private void armarPestañaBuscadorSalones(JTabbedPane tabs) {
         JPanel panel = new JPanel(new BorderLayout(15, 15));
         panel.setBackground(FONDO_GRIS_LIGERO);
 
-        JPanel pnlTop = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10)); pnlTop.setBackground(Color.WHITE);
+        JPanel pnlTop = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10)); 
+        pnlTop.setBackground(Color.WHITE);
         pnlTop.setBorder(BorderFactory.createLineBorder(new Color(220,225,230)));
-        pnlTop.add(new JLabel("Salón:")); txtBuscarSalon = new JTextField(8); pnlTop.add(txtBuscarSalon);
         
-        pnlTop.add(new JLabel("Bloque:")); cbBuscarHora = new JComboBox<>(new String[]{"06:30", "07:10", "07:50", "08:30"}); pnlTop.add(cbBuscarHora);
-        pnlTop.add(new JLabel("Fecha:")); String hoy = new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
-        txtBuscarFecha = new JTextField(hoy, 9); pnlTop.add(txtBuscarFecha);
+        pnlTop.add(new JLabel("Salón Escolar:")); 
+        txtBuscarSalon = new JTextField(8); 
+        pnlTop.add(txtBuscarSalon);
         
-        JButton btnFiltrar = new JButton("FILTRAR REGISTROS"); darEstiloBoton(btnFiltrar, AZUL_MEDIO);
-        pnlTop.add(btnFiltrar); panel.add(pnlTop, BorderLayout.NORTH);
+        // El ComboBox regresa para filtrar el bloque con los rangos exactos que pediste
+        pnlTop.add(new JLabel("Bloque:")); 
+        cbBuscarHora = new JComboBox<>(new String[]{"06:30 - 07:10", "07:10 - 07:50", "07:50 - 08:30", "08:30 - 09:10"}); 
+        pnlTop.add(cbBuscarHora);
+        
+        pnlTop.add(new JLabel("Semana del (AAAA-MM-DD):")); 
+        String hoy = new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
+        txtBuscarFecha = new JTextField(hoy, 9); 
+        pnlTop.add(txtBuscarFecha);
+        
+        JButton btnFiltrar = new JButton("CARGAR SEMANA"); 
+        darEstiloBoton(btnFiltrar, AZUL_MEDIO);
+        pnlTop.add(btnFiltrar); 
+        
+        JButton btnExcel = new JButton("⬇ DESCARGAR EXCEL");
+        darEstiloBoton(btnExcel, VERDE_EXCEL);
+        pnlTop.add(btnExcel);
+        
+        panel.add(pnlTop, BorderLayout.NORTH);
 
-        modeloFiltroSalon = new DefaultTableModel(new String[]{"Matrícula", "Bloque", "Materia Asignada", "Estatus Presencia", "Hora Marcaje"}, 0);
-        JTable tablaFiltro = new JTable(modeloFiltroSalon);
-        
+        // Se elimina la columna 'Bloque' de la tabla, ya que el filtro la hace redundante
+        modeloFiltroSalon = new DefaultTableModel(new String[]{"Matrícula", "Materia", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes"}, 0);
+        tablaFiltro = new JTable(modeloFiltroSalon);
         estilizarTablaGeneral(tablaFiltro);
+        
         panel.add(new JScrollPane(tablaFiltro), BorderLayout.CENTER);
 
-        btnFiltrar.addActionListener(e -> accionFiltrarSalon());
+        btnFiltrar.addActionListener(e -> accionFiltrarSalonSemanal());
+        btnExcel.addActionListener(e -> exportarTablaAExcel());
+        
         tabs.addTab("Buscador por Salón", panel);
     }
 
-   
-    // LÓGICA DE CONTROLADOR Y EVENTOS
-    
-
-   private void ejecutarEnrolamientoEnSegundoPlano(JButton btnOrigen) {
-    new Thread(() -> {
-        btnOrigen.setEnabled(false);
-        btnOrigen.setText("Leyendo...");
-        txtHuella.setText("Esperando dedo (Vez 1)...");
-        
-        SensorHuellaService sensor = new SensorHuellaService("COM7");
-        
+    private void accionFiltrarSalonSemanal() {
         try {
-            if (!sensor.conectar()) {
-                JOptionPane.showMessageDialog(this, "No se pudo abrir el puerto COM7. Verifique el sensor.", "Hardware Error", JOptionPane.ERROR_MESSAGE);
-                txtHuella.setText("");
-                return;
+            modeloFiltroSalon.setRowCount(0);
+            String bloqueSeleccionado = cbBuscarHora.getSelectedItem().toString();
+            List<Object[]> datos = controlador.generarReporteSemanalSalon(txtBuscarSalon.getText().trim().toUpperCase(), txtBuscarFecha.getText().trim(), bloqueSeleccionado);
+            for(Object[] row : datos) {
+                modeloFiltroSalon.addRow(row);
             }
-            
-            // --- CAPTURA 1 ---
-            boolean captura1 = false;
-            System.out.println("[BIOMETRÍA] Iniciando bucle de captura 1...");
-            for (int i = 0; i < 60; i++) { // Extendemos a 60 intentos (~15 segundos)
-                if (sensor.capturarFotoDedo()) {
-                    if (sensor.generarCaracteristicas(1)) {
-                        captura1 = true;
-                        break;
-                    }
-                }
-                Thread.sleep(250);
-            }
-            
-            if (!captura1) {
-                txtHuella.setText("Tiempo agotado / Error V1");
-                System.err.println("[BIOMETRÍA] Falló la primera captura por tiempo agotado.");
-                return;
-            }
-            
-            txtHuella.setText("¡Retire el dedo!");
-            System.out.println("[BIOMETRÍA] Captura 1 exitosa. Esperando liberación de sensor...");
-            Thread.sleep(2000); 
-            
-            // --- CAPTURA 2 ---
-            txtHuella.setText("Coloque el mismo dedo (Vez 2)...");
-            boolean captura2 = false;
-            for (int i = 0; i < 60; i++) {
-                if (sensor.capturarFotoDedo()) {
-                    if (sensor.generarCaracteristicas(2)) {
-                        captura2 = true;
-                        break;
-                    }
-                }
-                Thread.sleep(250);
-            }
-            
-            if (!captura2) {
-                txtHuella.setText("Error en confirmación V2");
-                System.err.println("[BIOMETRÍA] Falló la segunda captura.");
-                return;
-            }
-            
-            // --- CONSOLIDACIÓN Y DESCARGA HEX ---
-            txtHuella.setText("Modelando huella...");
-            System.out.println("[BIOMETRÍA] Creando modelo emparejado...");
-            if (sensor.crearModeloHuella()) {
-                // descargarTemplateDesdeSensor() internamente llamará a desconectar() al finalizar
-                String templateHex = sensor.descargarTemplateDesdeSensor();
-                
-                if (templateHex != null && !templateHex.isEmpty()) {
-                    txtHuella.setText(templateHex);
-                    JOptionPane.showMessageDialog(this, "¡Huella digital modelada con éxito! Ya puede guardar al usuario.", "Éxito Biométrico", JOptionPane.INFORMATION_MESSAGE);
-                } else {
-                    txtHuella.setText("Error al descargar buffer");
-                }
-            } else {
-                txtHuella.setText("Las huellas no coinciden");
-                System.err.println("[BIOMETRÍA] Las huellas del buffer 1 y 2 no se pudieron consolidar.");
-            }
-            
-        } catch (Exception ex) {
-            txtHuella.setText("Fallo: " + ex.getMessage());
-            ex.printStackTrace();
-        } finally {
-            // se asegura el estado de la UI y el cierre total del puerto físico por seguridad
-            try { sensor.desconectar(); } catch(Exception ignored){}
-            SwingUtilities.invokeLater(() -> {
-                btnOrigen.setText("Escanear");
-                btnOrigen.setEnabled(true);
-            });
+        } catch(Exception e) { 
+            JOptionPane.showMessageDialog(this, "Error generando reporte semanal: " + e.getMessage()); 
         }
-    }).start();
-}
+    }
+
+    private void exportarTablaAExcel() {
+        if (tablaFiltro.getRowCount() == 0) {
+            JOptionPane.showMessageDialog(this, "No hay datos para exportar. Busque un salón primero.", "Aviso", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Guardar Asistencia Semanal");
+        fileChooser.setSelectedFile(new File("Reporte_Asistencia_" + txtBuscarSalon.getText().trim() + ".csv"));
+
+        int userSelection = fileChooser.showSaveDialog(this);
+        if (userSelection == JFileChooser.APPROVE_OPTION) {
+            File archivoGuardar = fileChooser.getSelectedFile();
+            
+            if (!archivoGuardar.getName().toLowerCase().endsWith(".csv")) {
+                archivoGuardar = new File(archivoGuardar.getAbsolutePath() + ".csv");
+            }
+
+            try (PrintWriter pw = new PrintWriter(new FileWriter(archivoGuardar))) {
+                StringBuilder sbHeaders = new StringBuilder();
+                for (int i = 0; i < tablaFiltro.getColumnCount(); i++) {
+                    sbHeaders.append(tablaFiltro.getColumnName(i));
+                    if (i < tablaFiltro.getColumnCount() - 1) sbHeaders.append(",");
+                }
+                pw.println(sbHeaders.toString());
+
+                for (int i = 0; i < tablaFiltro.getRowCount(); i++) {
+                    StringBuilder sbRow = new StringBuilder();
+                    for (int j = 0; j < tablaFiltro.getColumnCount(); j++) {
+                        Object val = tablaFiltro.getValueAt(i, j);
+                        sbRow.append(val != null ? val.toString() : "");
+                        if (j < tablaFiltro.getColumnCount() - 1) sbRow.append(",");
+                    }
+                    pw.println(sbRow.toString());
+                }
+
+                JOptionPane.showMessageDialog(this, "¡Archivo Excel generado exitosamente!\n" + archivoGuardar.getAbsolutePath(), "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                Desktop.getDesktop().open(archivoGuardar);
+
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Error al guardar el archivo: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void ejecutarEnrolamientoEnSegundoPlano(JButton btnOrigen) {
+        new Thread(() -> {
+            btnOrigen.setEnabled(false);
+            btnOrigen.setText("Leyendo...");
+            txtHuella.setText("Esperando dedo (Vez 1)...");
+            
+            SensorHuellaService sensor = new SensorHuellaService("COM7");
+            
+            try {
+                if (!sensor.conectar()) {
+                    JOptionPane.showMessageDialog(this, "No se pudo abrir el puerto COM7. Verifique el sensor.", "Hardware Error", JOptionPane.ERROR_MESSAGE);
+                    txtHuella.setText("");
+                    return;
+                }
+                
+                boolean captura1 = false;
+                System.out.println("[BIOMETRÍA] Iniciando bucle de captura 1...");
+                for (int i = 0; i < 60; i++) {
+                    if (sensor.capturarFotoDedo()) {
+                        if (sensor.generarCaracteristicas(1)) {
+                            captura1 = true;
+                            break;
+                        }
+                    }
+                    Thread.sleep(250);
+                }
+                
+                if (!captura1) {
+                    txtHuella.setText("Tiempo agotado / Error V1");
+                    System.err.println("[BIOMETRÍA] Falló la primera captura por tiempo agotado.");
+                    return;
+                }
+                
+                txtHuella.setText("¡Retire el dedo!");
+                System.out.println("[BIOMETRÍA] Captura 1 exitosa. Esperando liberación de sensor...");
+                Thread.sleep(2000); 
+                
+                txtHuella.setText("Coloque el mismo dedo (Vez 2)...");
+                boolean captura2 = false;
+                for (int i = 0; i < 60; i++) {
+                    if (sensor.capturarFotoDedo()) {
+                        if (sensor.generarCaracteristicas(2)) {
+                            captura2 = true;
+                            break;
+                        }
+                    }
+                    Thread.sleep(250);
+                }
+                
+                if (!captura2) {
+                    txtHuella.setText("Error en confirmación V2");
+                    System.err.println("[BIOMETRÍA] Falló la segunda captura.");
+                    return;
+                }
+                
+                txtHuella.setText("Modelando huella...");
+                System.out.println("[BIOMETRÍA] Creando modelo emparejado...");
+                if (sensor.crearModeloHuella()) {
+                    String templateHex = sensor.descargarTemplateDesdeSensor();
+                    
+                    if (templateHex != null && !templateHex.isEmpty()) {
+                        txtHuella.setText(templateHex);
+                        JOptionPane.showMessageDialog(this, "¡Huella digital modelada con éxito! Ya puede guardar al usuario.", "Éxito Biométrico", JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        txtHuella.setText("Error al descargar buffer");
+                    }
+                } else {
+                    txtHuella.setText("Las huellas no coinciden");
+                    System.err.println("[BIOMETRÍA] Las huellas del buffer 1 y 2 no se pudieron consolidar.");
+                }
+                
+            } catch (Exception ex) {
+                txtHuella.setText("Fallo: " + ex.getMessage());
+                ex.printStackTrace();
+            } finally {
+                try { sensor.desconectar(); } catch(Exception ignored){}
+                SwingUtilities.invokeLater(() -> {
+                    btnOrigen.setText("Escanear");
+                    btnOrigen.setEnabled(true);
+                });
+            }
+        }).start();
+    }
 
     private void accionGuardar() {
         String[][] bloques = { 
@@ -528,16 +584,6 @@ public class MainAdmin extends JFrame {
         }
     }
 
-    private void accionFiltrarSalon() {
-        try {
-            modeloFiltroSalon.setRowCount(0);
-            String bloqueHora = cbBuscarHora.getSelectedItem().toString() + ":00";
-            List<Object[]> datos = controlador.filtrarAsistenciasPorSalon(txtBuscarSalon.getText().trim().toUpperCase(), bloqueHora, txtBuscarFecha.getText().trim());
-            for(Object[] row : datos) modeloFiltroSalon.addRow(row);
-        } catch(Exception e) { JOptionPane.showMessageDialog(this, "Error analítico: " + e.getMessage()); }
-    }
-
-    // MÉTODOS AUXILIARES: PERSONALIZACIÓN DE COMPONENTES
     private void darEstiloBoton(JButton boton, Color colorFondo) {
         boton.setBackground(colorFondo); 
         boton.setForeground(Color.WHITE); 

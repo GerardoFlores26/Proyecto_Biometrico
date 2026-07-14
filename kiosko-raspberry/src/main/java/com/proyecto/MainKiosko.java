@@ -79,19 +79,16 @@ public class MainKiosko extends JFrame {
                         lblConsejo.setText("💡 Lector AS608 en línea. Coloque su dedo sobre el sensor para pasar asistencia...");
                         lblConsejo.setForeground(new Color(39, 174, 96)); 
 
-                        // Paso centralizado: Captura la imagen inicial
                         if (sensor.capturarFotoDedo()) {
-                            // Genera las características en el Buffer 1 inmediatamente
                             if (sensor.generarCaracteristicas(1)) {
                                 SwingUtilities.invokeLater(() -> {
                                     lblStatus.setText("PROCESANDO HUELLA...");
                                     lblStatus.setForeground(new Color(211, 84, 0));
                                 });
                                 
-                                // Evaluamos de forma directa usando la imagen ya procesada
                                 evaluarAccesoBiometrico();
                             }
-                            Thread.sleep(3500); // Evita duplicados inmediatos
+                            Thread.sleep(3500); 
                         }
                     } else {
                         lblConsejo.setText("❌ Error: No se detecta el lector de huellas en el puerto asignado.");
@@ -117,19 +114,13 @@ public class MainKiosko extends JFrame {
         }
     }
 
-    /**
-     * ALGORITMO INTEGRAL SEGURO: Compara las huellas en formato String Hex de Supabase.
-     * Evalúa la memoria caché y realiza el contraste directo sobre el Buffer 1 del sensor.
-     */
     private void evaluarAccesoBiometrico() {
         String huellaHolograficaMatch = null;
         List<String[]> agendaAsignada = null;
         
         System.out.println("[KIOSKO] Buscando correspondencia de cadena en caché...");
-        System.out.println("[DEBUG] Huellas activas en mapa de memoria: " + (cacheHorarios != null ? cacheHorarios.size() : 0));
 
         if (cacheHorarios == null || cacheHorarios.isEmpty()) {
-            System.out.println("[⚠️ ALERTA KIOSKO] La caché está completamente vacía. Revisa la descarga de horarios.");
             actualizarPantalla("ACCESO DENEGADO ", "SISTEMA SIN DATOS LOCALES", new Color(231, 76, 60));
             return;
         }
@@ -137,29 +128,33 @@ public class MainKiosko extends JFrame {
         for (Map.Entry<String, List<String[]>> entrada : cacheHorarios.entrySet()) {
             String hexBase = entrada.getKey();
             
-            // Filtro reducido a 10 caracteres por seguridad para admitir templates más limpios
-            if (hexBase == null || hexBase.trim().length() < 10) {
-                System.out.println("[DEBUG] Saltando un template inválido en caché. Longitud: " + (hexBase != null ? hexBase.length() : 0));
-                continue; 
-            }
+            if (hexBase == null || hexBase.trim().length() < 10) continue; 
 
             try {
-                // Realiza la comparación por hardware del dedo puesto en el Buffer contra el string mapeado
                 if (sensor.verificarDedoContraSupabase(hexBase.trim())) {
                     huellaHolograficaMatch = hexBase;
                     agendaAsignada = entrada.getValue();
-                    break; // ¡Coincidencia exitosa! Rompemos el ciclo
+                    break; 
                 }
             } catch (Exception e) {
                 System.err.println("[ERROR KIOSKO] Fallo al contrastar fila: " + e.getMessage());
             }
         }
 
-        // EVALUACIÓN DE HORARIOS E IMPRESIÓN DEL RESULTADO
+        // EVALUACIÓN DE HORARIOS ESTRICTA
         if (huellaHolograficaMatch != null && agendaAsignada != null && !agendaAsignada.isEmpty()) {
             String bloqueActual = controlador.obtenerBloqueHorarioActual(); 
-            String[] bloqueEncontrado = null;
+            String matInercial = agendaAsignada.get(0)[0]; // Matrícula del usuario identificado
+            
+            // 1. REGLA DE BLOQUEO: Si el reloj está fuera del horario escolar
+            if (bloqueActual.equals("FUERA_DE_HORARIO")) {
+                actualizarPantalla("FUERA DE TURNO", "NO HAY CLASES A ESTA HORA", new Color(231, 76, 60));
+                controlador.registrarLogAcceso(matInercial, false, "Intento de acceso fuera del horario escolar.", SALON_ACTUAL);
+                return;
+            }
 
+            // 2. BUSCAR MATERIA EN EL HORARIO ACTUAL
+            String[] bloqueEncontrado = null;
             for (String[] h : agendaAsignada) {
                 if (h[1].startsWith(bloqueActual)) { 
                     bloqueEncontrado = h; 
@@ -167,28 +162,26 @@ public class MainKiosko extends JFrame {
                 }
             }
 
+            // 3. DECISIÓN FINAL DE ACCESO
             if (bloqueEncontrado != null) {
-                String mat = bloqueEncontrado[0]; 
                 String salonAsignado = bloqueEncontrado[2]; 
                 String materiaNombre = bloqueEncontrado[3];
 
                 if (salonAsignado.equalsIgnoreCase(SALON_ACTUAL)) {
-                    actualizarPantalla("ASISTENCIA REGISTRADA ", "MATRÍCULA: " + mat + " (" + materiaNombre + ")", new Color(46, 204, 113));
-                    controlador.registrarLogAcceso(mat, true, "Clase: " + materiaNombre + " en " + SALON_ACTUAL, SALON_ACTUAL);
+                    actualizarPantalla("ASISTENCIA REGISTRADA ", "MATRÍCULA: " + matInercial + " (" + materiaNombre + ")", new Color(46, 204, 113));
+                    controlador.registrarLogAcceso(matInercial, true, "Clase: " + materiaNombre + " en " + SALON_ACTUAL, SALON_ACTUAL);
                 } else if (salonAsignado.equals("LIBRE")) {
-                    actualizarPantalla("HORA LIBRE", "MATRÍCULA: " + mat, new Color(20, 80, 160));
-                    controlador.registrarLogAcceso(mat, false, "El usuario cuenta con Hora Libre.", SALON_ACTUAL);
+                    actualizarPantalla("HORA LIBRE", "MATRÍCULA: " + matInercial, new Color(20, 80, 160));
+                    controlador.registrarLogAcceso(matInercial, false, "El usuario cuenta con Hora Libre.", SALON_ACTUAL);
                 } else {
                     actualizarPantalla("SALÓN EQUIVOCADO ", "DEBES IR A: " + salonAsignado, new Color(231, 76, 60));
-                    controlador.registrarLogAcceso(mat, false, "Debió asistir a " + salonAsignado, SALON_ACTUAL);
+                    controlador.registrarLogAcceso(matInercial, false, "Debió asistir a " + salonAsignado, SALON_ACTUAL);
                 }
             } else {
-                String matInercial = agendaAsignada.get(0)[0];
                 actualizarPantalla("FUERA DE TURNO", "SIN MATERIAS ASIGNADAS AHORA", new Color(231, 76, 60));
-                controlador.registrarLogAcceso(matInercial, false, "Sin clases asignadas en este bloque.", SALON_ACTUAL);
+                controlador.registrarLogAcceso(matInercial, false, "El usuario no tiene clases registradas en este bloque.", SALON_ACTUAL);
             }
         } else {
-            System.out.println("[KIOSKO] Análisis completado: No se encontró ninguna coincidencia biométrica válida.");
             actualizarPantalla("ACCESO DENEGADO ", "HUELLA DESCONOCIDA", new Color(231, 76, 60));
             controlador.registrarLogAcceso(null, false, "Intento con huella no registrada o rechazada.", SALON_ACTUAL);
         }

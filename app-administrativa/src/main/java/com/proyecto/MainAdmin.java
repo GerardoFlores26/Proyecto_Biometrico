@@ -156,7 +156,7 @@ public class MainAdmin extends JFrame {
         JPanel pnlMatriz = new JPanel(new GridBagLayout());
         pnlMatriz.setBackground(Color.WHITE);
         pnlMatriz.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(210, 215, 225)), " 2. Carga del Turno Escolar (4 Bloques) ", 0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
+            BorderFactory.createLineBorder(new Color(210, 215, 225)), " 2. Carga del Turno Escolar ", 0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
         
         GridBagConstraints gbcM = new GridBagConstraints();
         gbcM.insets = new Insets(4, 4, 4, 4); gbcM.fill = GridBagConstraints.HORIZONTAL;

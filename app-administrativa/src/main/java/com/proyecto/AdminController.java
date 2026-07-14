@@ -137,32 +137,46 @@ public class AdminController {
     }
 
     /**
-     * Reporte Semanal Filtrado por Salón y Bloque de Hora (ej. 06:30 - 07:10).
+     * Reporte Semanal (Versión Blindada): 
+     * - Calcula las fechas desde Java para evadir fallos de zona horaria en la Nube.
+     * - Resta 6 horas de compensación para turnos nocturnos.
+     * - Reemplaza Emojis por Texto Plano (PRESENTE/FALTA) para evitar corrupción de caracteres en Java y Excel.
      */
     public List<Object[]> generarReporteSemanalSalon(String salon, String fechaReferencia, String bloqueSeleccionado) throws Exception {
         List<Object[]> lista = new ArrayList<>();
         
-        String sql = "WITH Semana AS ( " +
-                     "  SELECT DATE_TRUNC('week', ?::DATE)::DATE as lunes " +
-                     ") " +
-                     "SELECT h.matricula, h.materia, " +
-                     "  COALESCE((SELECT '✔' FROM registro_accesos r, Semana s WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND r.fecha_hora::DATE = s.lunes LIMIT 1), '❌') as lun, " +
-                     "  COALESCE((SELECT '✔' FROM registro_accesos r, Semana s WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND r.fecha_hora::DATE = s.lunes + INTERVAL '1 day' LIMIT 1), '❌') as mar, " +
-                     "  COALESCE((SELECT '✔' FROM registro_accesos r, Semana s WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND r.fecha_hora::DATE = s.lunes + INTERVAL '2 day' LIMIT 1), '❌') as mie, " +
-                     "  COALESCE((SELECT '✔' FROM registro_accesos r, Semana s WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND r.fecha_hora::DATE = s.lunes + INTERVAL '3 day' LIMIT 1), '❌') as jue, " +
-                     "  COALESCE((SELECT '✔' FROM registro_accesos r, Semana s WHERE r.matricula = h.matricula AND r.salon_kiosko = h.salon AND r.permitido = true AND r.fecha_hora::DATE = s.lunes + INTERVAL '4 day' LIMIT 1), '❌') as vie " +
-                     "FROM horarios h WHERE h.salon LIKE ? AND CAST(h.hora_inicio AS VARCHAR) LIKE ? " +
+        // 1. Calculamos los días exactos de Lunes a Viernes de esa semana en Java
+        java.time.LocalDate fechaBase = java.time.LocalDate.parse(fechaReferencia);
+        java.time.LocalDate lunes = fechaBase.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+        
+        String dLun = lunes.toString();
+        String dMar = lunes.plusDays(1).toString();
+        String dMie = lunes.plusDays(2).toString();
+        String dJue = lunes.plusDays(3).toString();
+        String dVie = lunes.plusDays(4).toString();
+        
+        // 2. Consulta SQL extrema para emparejar la asistencia (Usamos texto PRESENTE y FALTA)
+        String sql = "SELECT h.matricula, h.materia, " +
+                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as lun, " +
+                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as mar, " +
+                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as mie, " +
+                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as jue, " +
+                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as vie " +
+                     "FROM horarios h WHERE TRIM(h.salon) LIKE ? AND CAST(h.hora_inicio AS VARCHAR) LIKE ? " +
                      "ORDER BY h.matricula";
                      
         try (Connection con = ConexionSupabase.obtenerConexion();
              PreparedStatement ps = con.prepareStatement(sql)) {
             
-            ps.setString(1, fechaReferencia); 
-            ps.setString(2, "%" + salon + "%"); 
+            ps.setString(1, dLun);
+            ps.setString(2, dMar);
+            ps.setString(3, dMie);
+            ps.setString(4, dJue);
+            ps.setString(5, dVie);
+            ps.setString(6, "%" + salon.trim() + "%"); 
             
-            // Extrae el "06:30" del string "06:30 - 07:10" y lo busca en la base de datos
             String horaSQL = normalizarHora24(bloqueSeleccionado, "BUSQUEDA").substring(0, 5) + "%";
-            ps.setString(3, horaSQL); 
+            ps.setString(7, horaSQL); 
             
             try (ResultSet rs = ps.executeQuery()) {
                 while(rs.next()) {

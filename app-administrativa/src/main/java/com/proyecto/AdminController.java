@@ -8,14 +8,29 @@ import java.util.List;
  * CONTROLADOR ADMINISTRATIVO (MVC - CAPA DE NEGOCIO)
  * Intermediario que gestiona las transacciones entre la Interfaz Gráfica (MainAdmin)
  * y la Base de Datos en la nube (Supabase / PostgreSQL).
+ * * Responsabilidades:
+ * - Sanitización de datos provenientes de la vista.
+ * - Ejecución de transacciones SQL atómicas (Commit/Rollback).
+ * - Generación de reportes cruzados y manejo de zonas horarias.
  */
 public class AdminController {
 
+    /**
+     * Normaliza los bloques de texto de la interfaz gráfica a formato SQL TIME (HH:mm:ss).
+     * Esto previene errores de persistencia al intentar insertar rangos (ej. "06:30 - 07:10")
+     * o formatos con sufijos en la base de datos.
+     *
+     * @param horaOriginal Cadena de texto proveniente de la vista (Ej. "06:30 hs" o "06:30 - 07:10").
+     * @param rol Parámetro auxiliar para contexto.
+     * @return Cadena formateada estrictamente como "HH:mm:ss" compatible con PostgreSQL.
+     */
     private String normalizarHora24(String horaOriginal, String rol) {
         if (horaOriginal == null || horaOriginal.isEmpty()) return "00:00:00";
         
+        // Limpieza de sufijos estéticos de la UI
         String horaLimpia = horaOriginal.replace(" hs", "").trim();
         
+        // Extracción del bloque de inicio si la cadena contiene un rango
         if (horaLimpia.contains("-")) {
             horaLimpia = horaLimpia.split("-")[0].trim();
         }
@@ -29,7 +44,23 @@ public class AdminController {
         return String.format("%02d:%02d:00", horaInt, minutos);
     }
 
+    /**
+     * Inserta o actualiza un usuario y su matriz completa de horarios escolares en una sola transacción atómica.
+     * Utiliza la cláusula ON CONFLICT (Upsert) para evitar duplicidad de matrículas.
+     * Si la inserción de algún bloque de horario falla, toda la transacción hace Rollback para
+     * evitar registros huérfanos o parciales en la base de datos.
+     *
+     * @param mat Matrícula única del usuario.
+     * @param nom Nombre completo del usuario.
+     * @param rol Rol institucional (ALUMNO/MAESTRO).
+     * @param car Carrera o departamento.
+     * @param hue Cadena hexadecimal de la huella dactilar.
+     * @param bloques Matriz bidimensional con los horarios (Bloque, Salón, Materia).
+     * @return true si la transacción fue exitosa.
+     * @throws Exception Si ocurre un fallo de conexión o violación de restricciones SQL.
+     */
     public boolean guardarUsuarioYHorarios(String mat, String nom, String rol, String car, String hue, String[][] bloques) throws Exception {
+        // UPSERT de Usuario: Protege el template biométrico existente si la actualización viene con una huella vacía.
         String sqlUser = "INSERT INTO usuarios (matricula, nombre, rol, carrera, huella_template) VALUES (?, ?, ?, ?, ?) " +
                          "ON CONFLICT (matricula) DO UPDATE SET " +
                          "nombre = COALESCE(NULLIF(EXCLUDED.nombre, ''), usuarios.nombre), " +
@@ -40,11 +71,12 @@ public class AdminController {
                          "    ELSE usuarios.huella_template " +
                          "END";
 
+        // UPSERT de Horario: Actualiza salón y materia si ya existe un registro para esa matrícula a esa hora específica.
         String sqlHorario = "INSERT INTO horarios (matricula, hora_inicio, salon, materia) VALUES (?, ?, ?, ?) " +
                             "ON CONFLICT (matricula, hora_inicio) DO UPDATE SET salon = EXCLUDED.salon, materia = EXCLUDED.materia";
 
         try (Connection con = ConexionSupabase.obtenerConexion()) { 
-            con.setAutoCommit(false); 
+            con.setAutoCommit(false); // Inicia bloque de transacción atómica
             
             try (PreparedStatement psUser = con.prepareStatement(sqlUser);
                  PreparedStatement psHorario = con.prepareStatement(sqlHorario)) {
@@ -54,6 +86,7 @@ public class AdminController {
                 psUser.setString(3, rol); 
                 psUser.setString(4, car); 
                 
+                // Validación estricta del payload biométrico para evitar corromper la BD con cadenas cortas o nulas
                 if (hue == null || hue.trim().isEmpty() || hue.length() < 50) {
                     psUser.setString(5, null);
                 } else {
@@ -61,6 +94,7 @@ public class AdminController {
                 }
                 psUser.executeUpdate();
 
+                // Procesamiento secuencial de la matriz de horarios
                 for (String[] b : bloques) {
                     if (b[0] == null || b[0].isEmpty()) continue;
                     
@@ -72,15 +106,23 @@ public class AdminController {
                     psHorario.executeUpdate();
                 }
                 
-                con.commit(); 
+                con.commit(); // Consolidación de datos
                 return true;
             } catch (Exception ex) { 
-                con.rollback(); 
+                con.rollback(); // Reversión de cambios ante cualquier excepción
                 throw ex; 
             }
         }
     }
 
+    /**
+     * Recupera la lista de usuarios filtrados por su rol institucional.
+     * Evalúa la integridad de la huella dactilar para devolver un estatus visual a la tabla de la vista.
+     *
+     * @param rol "ALUMNO" o "MAESTRO".
+     * @return Lista de arreglos (List<Object[]>) adaptada para DefaultTableModel.
+     * @throws Exception En caso de error de lectura SQL.
+     */
     public List<Object[]> obtenerUsuariosPorRol(String rol) throws Exception {
         List<Object[]> lista = new ArrayList<>();
         String sql = "SELECT matricula, nombre, carrera, huella_template FROM usuarios WHERE rol = ? ORDER BY matricula ASC";
@@ -91,6 +133,8 @@ public class AdminController {
             try (ResultSet rs = ps.executeQuery()) {
                 while(rs.next()) {
                     String ht = rs.getString("huella_template");
+                    
+                    // Verificación de integridad: Templates menores a 100 caracteres se consideran inválidos/corruptos
                     String estatusHuella = (ht == null || ht.trim().isEmpty() || ht.length() < 100) ? "Sin Registrar" : "ACTIVA ✔";
                     
                     lista.add(new Object[]{
@@ -105,6 +149,13 @@ public class AdminController {
         return lista;
     }
 
+    /**
+     * Extrae el cronograma de clases de un estudiante particular.
+     *
+     * @param matricula Matrícula del usuario a consultar.
+     * @return Lista de horarios parseados para la vista.
+     * @throws Exception Error de conexión o lectura.
+     */
     public List<Object[]> obtenerHorarioIndividual(String matricula) throws Exception {
         List<Object[]> lista = new ArrayList<>();
         String sql = "SELECT hora_inicio, salon, materia FROM horarios WHERE matricula = ? ORDER BY hora_inicio ASC";
@@ -115,6 +166,7 @@ public class AdminController {
             try (ResultSet rs = ps.executeQuery()) {
                 while(rs.next()) {
                     Time hora = rs.getTime("hora_inicio");
+                    // Transformación del tipo TIME a String presentable ("HH:mm hs")
                     String horaFormateada = (hora != null) ? hora.toString().substring(0, 5) + " hs" : "00:00 hs";
                     lista.add(new Object[]{
                         horaFormateada, 
@@ -127,6 +179,11 @@ public class AdminController {
         return lista;
     }
 
+    /**
+     * Ejecuta una purga de datos por matrícula de forma directa en la base de datos.
+     * * @param matricula Identificador único del registro a borrar.
+     * @throws Exception Si la eliminación compromete la integridad referencial.
+     */
     public void eliminarUsuario(String matricula) throws Exception {
         String sql = "DELETE FROM usuarios WHERE matricula = ?";
         try (Connection con = ConexionSupabase.obtenerConexion();
@@ -137,15 +194,22 @@ public class AdminController {
     }
 
     /**
-     * Reporte Semanal (Versión Blindada): 
-     * - Calcula las fechas desde Java para evadir fallos de zona horaria en la Nube.
-     * - Resta 6 horas de compensación para turnos nocturnos.
-     * - Reemplaza Emojis por Texto Plano (PRESENTE/FALTA) para evitar corrupción de caracteres en Java y Excel.
+     * Motor de Generación de Reporte Pivot Semanal.
+     * Calcula dinámicamente los días de la semana escolar (Lunes a Viernes) desde Java para mitigar 
+     * discrepancias de husos horarios con el servidor de la nube (UTC vs Hora Local).
+     * * Implementa compensación de tiempo (-6 hours) en la consulta SQL para asegurar que las asistencias 
+     * del turno vespertino/nocturno no sean contabilizadas al día siguiente debido al salto de zona UTC.
+     *
+     * @param salon Nombre o ID del aula filtrada.
+     * @param fechaReferencia Fecha pivote provista por la UI (formato YYYY-MM-DD).
+     * @param bloqueSeleccionado Bloque horario específico para restringir el filtro.
+     * @return Matriz de datos transversal (Días como columnas) lista para exportación a Excel (CSV).
+     * @throws Exception Si falla el parsing de fechas o la ejecución SQL.
      */
     public List<Object[]> generarReporteSemanalSalon(String salon, String fechaReferencia, String bloqueSeleccionado) throws Exception {
         List<Object[]> lista = new ArrayList<>();
         
-        // 1. Calculamos los días exactos de Lunes a Viernes de esa semana en Java
+        // 1. Cálculo Aritmético de Fechas (Aislamiento de lógica en la JVM para prevenir fallos UTC)
         java.time.LocalDate fechaBase = java.time.LocalDate.parse(fechaReferencia);
         java.time.LocalDate lunes = fechaBase.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
         
@@ -155,7 +219,10 @@ public class AdminController {
         String dJue = lunes.plusDays(3).toString();
         String dVie = lunes.plusDays(4).toString();
         
-        // 2. Consulta SQL extrema para emparejar la asistencia (Usamos texto PRESENTE y FALTA)
+        // 2. Consulta Transversal (Pivot).
+        // Se aplica TRIM() y UPPER() de manera defensiva en las cláusulas WHERE para asegurar 
+        // coincidencias a pesar de posibles espacios accidentales insertados al crear salones o matrículas.
+        // El ajuste INTERVAL '-6 hours' neutraliza la diferencia horaria respecto al servidor en UTC.
         String sql = "SELECT h.matricula, h.materia, " +
                      "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as lun, " +
                      "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as mar, " +
@@ -175,6 +242,7 @@ public class AdminController {
             ps.setString(5, dVie);
             ps.setString(6, "%" + salon.trim() + "%"); 
             
+            // Reutilización de normalización para asegurar cruce exacto de bloque de inicio
             String horaSQL = normalizarHora24(bloqueSeleccionado, "BUSQUEDA").substring(0, 5) + "%";
             ps.setString(7, horaSQL); 
             
@@ -195,6 +263,14 @@ public class AdminController {
         return lista;
     }
 
+    /**
+     * Consulta el log de auditoría histórico exclusivamente para el perfil 'MAESTRO'.
+     * Utiliza INNER JOIN para asegurar que solo devuelva marcas válidas cruzando con la tabla de usuarios.
+     *
+     * @param fecha Cadena de fecha YYYY-MM-DD.
+     * @return Log tabular de accesos.
+     * @throws Exception Si ocurre un fallo en la conexión o sintaxis.
+     */
     public List<Object[]> consultarAsistenciaMaestrosPorFecha(String fecha) throws Exception {
         List<Object[]> lista = new ArrayList<>();
         String sql = "SELECT u.matricula, u.nombre, r.salon_kiosko, r.fecha_hora " +
@@ -220,6 +296,15 @@ public class AdminController {
         return lista;
     }
 
+    /**
+     * Alimentador de datos para el Monitor Visual en Tiempo Real.
+     * Extrae una ráfaga con los últimos 15 registros globales, ordenados descendentemente.
+     * Implementa LEFT JOIN porque los registros rechazados por hardware biométrico pueden no
+     * poseer una matrícula válida en el sistema (ej. intentos de intrusos).
+     *
+     * @return Lista estructurada para el modelo JTable del monitor.
+     * @throws Exception En caso de desconexión abrupta de red durante el hilo (timer).
+     */
     public List<Object[]> obtenerUltimos15Ingresos() throws Exception {
         List<Object[]> lista = new ArrayList<>();
         String sql = "SELECT r.matricula, COALESCE(u.nombre, 'NO RECONOCIDO') as nombre, " +
@@ -241,6 +326,7 @@ public class AdminController {
                 boolean permitido = rs.getBoolean("permitido");
                 String motivo = rs.getString("motivo_rechazo");
 
+                // Parseo de Timestamp ("YYYY-MM-DD HH:mm:ss.ms") para extraer solo el bloque "HH:mm:ss"
                 String horaFormateada = "--:--:--";
                 if (horaCompleta != null && horaCompleta.length() >= 19) {
                     horaFormateada = horaCompleta.substring(11, 19);

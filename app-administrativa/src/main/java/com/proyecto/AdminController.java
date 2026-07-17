@@ -193,23 +193,28 @@ public class AdminController {
         }
     }
 
-    /**
+/**
      * Motor de Generación de Reporte Pivot Semanal.
-     * Calcula dinámicamente los días de la semana escolar (Lunes a Viernes) desde Java para mitigar 
-     * discrepancias de husos horarios con el servidor de la nube (UTC vs Hora Local).
-     * * Implementa compensación de tiempo (-6 hours) en la consulta SQL para asegurar que las asistencias 
-     * del turno vespertino/nocturno no sean contabilizadas al día siguiente debido al salto de zona UTC.
+     * Mapea de forma transversal las asistencias de la semana (Lunes a Viernes).
+     * * Optimización Estética y de Compatibilidad:
+     * - Utiliza los caracteres oficiales del plantel ('*' para asistencia y '/' para falta) 
+     * en lugar de cadenas de texto largas. Esto reduce la carga visual en la hoja de cálculo
+     * y emula la distribución del formato institucional.
+     * - Implementa una compensación de huso horario (-6 horas) en las consultas SQL para 
+     * neutralizar el desfase de los servidores en la nube (UTC) con el turno nocturno local.
+     * - Aplica funciones defensivas TRIM() y UPPER() para prevenir pases de lista nulos por 
+     * espacios accidentales en las matrículas o salones.
      *
-     * @param salon Nombre o ID del aula filtrada.
-     * @param fechaReferencia Fecha pivote provista por la UI (formato YYYY-MM-DD).
-     * @param bloqueSeleccionado Bloque horario específico para restringir el filtro.
-     * @return Matriz de datos transversal (Días como columnas) lista para exportación a Excel (CSV).
-     * @throws Exception Si falla el parsing de fechas o la ejecución SQL.
+     * @param salon Nombre del aula física a filtrar (Ej. "303").
+     * @param fechaReferencia Fecha base seleccionada en la interfaz (YYYY-MM-DD).
+     * @param bloqueSeleccionado Rango horario de la materia (Ej. "08:30 - 09:10").
+     * @return Lista de arreglos de objetos conteniendo la matriz de asistencia semanal.
+     * @throws Exception Si ocurre un fallo en la conexión TCP/IP con Supabase.
      */
     public List<Object[]> generarReporteSemanalSalon(String salon, String fechaReferencia, String bloqueSeleccionado) throws Exception {
         List<Object[]> lista = new ArrayList<>();
         
-        // 1. Cálculo Aritmético de Fechas (Aislamiento de lógica en la JVM para prevenir fallos UTC)
+        // 1. Cálculo Aritmético de Fechas en la JVM para control estricto de la semana escolar
         java.time.LocalDate fechaBase = java.time.LocalDate.parse(fechaReferencia);
         java.time.LocalDate lunes = fechaBase.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
         
@@ -219,16 +224,13 @@ public class AdminController {
         String dJue = lunes.plusDays(3).toString();
         String dVie = lunes.plusDays(4).toString();
         
-        // 2. Consulta Transversal (Pivot).
-        // Se aplica TRIM() y UPPER() de manera defensiva en las cláusulas WHERE para asegurar 
-        // coincidencias a pesar de posibles espacios accidentales insertados al crear salones o matrículas.
-        // El ajuste INTERVAL '-6 hours' neutraliza la diferencia horaria respecto al servidor en UTC.
+        // 2. Consulta Transversal (Pivot) con codificación de símbolos estándar ASCII (* y /)
         String sql = "SELECT h.matricula, h.materia, " +
-                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as lun, " +
-                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as mar, " +
-                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as mie, " +
-                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as jue, " +
-                     "  COALESCE((SELECT 'PRESENTE' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), 'FALTA') as vie " +
+                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as lun, " +
+                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as mar, " +
+                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as mie, " +
+                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as jue, " +
+                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as vie " +
                      "FROM horarios h WHERE TRIM(h.salon) LIKE ? AND CAST(h.hora_inicio AS VARCHAR) LIKE ? " +
                      "ORDER BY h.matricula";
                      
@@ -242,7 +244,7 @@ public class AdminController {
             ps.setString(5, dVie);
             ps.setString(6, "%" + salon.trim() + "%"); 
             
-            // Reutilización de normalización para asegurar cruce exacto de bloque de inicio
+            // Extracción de los primeros 5 caracteres de la hora para validación de bloque
             String horaSQL = normalizarHora24(bloqueSeleccionado, "BUSQUEDA").substring(0, 5) + "%";
             ps.setString(7, horaSQL); 
             

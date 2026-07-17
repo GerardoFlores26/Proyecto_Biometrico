@@ -4,8 +4,12 @@ import com.fazecast.jSerialComm.SerialPort;
 import java.util.Arrays;
 
 /**
- * SERVICIO DE CONTROL PARA EL SENSOR DE HUELLA AS608 (Protocolo Serial)
- 
+ * SERVICIO DE CONTROL DE HARDWARE (AS608) - CAPA ADMINISTRATIVA (ENROLAMIENTO)
+ * Interfaz de comunicación de bajo nivel para el sensor óptico de huellas AS608.
+ * A diferencia de la versión del Kiosko, esta clase está optimizada para el "Enrolamiento" (Registro).
+ * Incorpora un algoritmo purificador de tramas seriales que extrae las minucias de la huella
+ * descartando el "ruido" del protocolo (cabeceras, identificadores y sumas de comprobación),
+ * garantizando que la base de datos almacene un modelo matemático puro y estandarizado.
  */
 public class SensorHuellaService {
 
@@ -16,38 +20,48 @@ public class SensorHuellaService {
     private final byte[] HEADER_DIRECCION = {(byte) 0xEF, (byte) 0x01, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
     private final byte PID_COMANDO = (byte) 0x01;
 
+    /**
+     * Constructor del servicio administrativo.
+     * @param nombrePuerto Identificador del puerto COM (Ej. "COM3").
+     */
     public SensorHuellaService(String nombrePuerto) {
         this.nombrePuerto = nombrePuerto;
     }
 
+    /**
+     * Inicializa la interfaz serial RS232 con la placa óptica biométrica.
+     * @return true si la apertura del puerto y el saludo (Handshake) inicial fueron exitosos.
+     */
     public boolean conectar() {
-    if (puertoSerial != null && puertoSerial.isOpen()) {
-        return true;
+        if (puertoSerial != null && puertoSerial.isOpen()) {
+            return true;
+        }
+
+        puertoSerial = SerialPort.getCommPort(nombrePuerto);
+        puertoSerial.setBaudRate(BAUD_RATE);
+        puertoSerial.setNumDataBits(8);
+        puertoSerial.setNumStopBits(SerialPort.ONE_STOP_BIT);
+        puertoSerial.setParity(SerialPort.NO_PARITY);
+        
+        puertoSerial.setComPortTimeouts(SerialPort.TIMEOUT_NONBLOCKING, 0, 0);
+
+        if (puertoSerial.openPort()) {
+            System.out.println("✔ Conectado exitosamente al sensor en el puerto: " + nombrePuerto);
+            puertoSerial.flushIOBuffers();
+            
+            verificarContrasena(); 
+            System.out.println("✔ Sincronización del puerto serial forzada para el panel Administrativo.");
+            return true; 
+            
+        } else {
+            System.err.println("❌ No se pudo abrir el puerto: " + nombrePuerto);
+            return false;
+        }
     }
 
-    puertoSerial = SerialPort.getCommPort(nombrePuerto);
-    puertoSerial.setBaudRate(BAUD_RATE);
-    puertoSerial.setNumDataBits(8);
-    puertoSerial.setNumStopBits(SerialPort.ONE_STOP_BIT);
-    puertoSerial.setParity(SerialPort.NO_PARITY);
-    
-    puertoSerial.setComPortTimeouts(SerialPort.TIMEOUT_NONBLOCKING, 0, 0);
-
-    if (puertoSerial.openPort()) {
-        System.out.println("✔ Conectado exitosamente al sensor en el puerto: " + nombrePuerto);
-        puertoSerial.flushIOBuffers();
-        
-        // Forzamos el true para que el Kiosko continúe aunque el módulo tenga otra clave de fábrica
-        verificarContrasena(); 
-        System.out.println("✔ Sincronización del puerto serial forzada para el Kiosko.");
-        return true; 
-        
-    } else {
-        System.err.println("❌ No se pudo abrir el puerto: " + nombrePuerto);
-        return false;
-    }
-}
-
+    /**
+     * Libera el hilo de comunicación serial.
+     */
     public void desconectar() {
         if (puertoSerial != null && puertoSerial.isOpen()) {
             puertoSerial.closePort();
@@ -55,6 +69,9 @@ public class SensorHuellaService {
         }
     }
 
+    /**
+     * Valida el acceso a la placa óptica mediante la contraseña por defecto de fábrica.
+     */
     private boolean verificarContrasena() {
         byte[] pwd = {0x00, 0x00, 0x00, 0x00};
         byte[] respuesta = enviarComando((byte) 0x13, pwd);
@@ -64,6 +81,13 @@ public class SensorHuellaService {
         return false;
     }
 
+    /**
+     * Transmisor de tramas base del protocolo AS60X.
+     *
+     * @param instruccion Byte que representa la acción a realizar en el sensor.
+     * @param datos Argumentos secundarios del comando (puede ser null).
+     * @return Arreglo de bytes emitido por el sensor físico como acuse de recibo.
+     */
     private byte[] enviarComando(byte instruccion, byte[] datos) {
         int numDatosAdicionales = (datos != null) ? datos.length : 0;
         int tamanoPaquete = 12 + numDatosAdicionales; 
@@ -100,7 +124,6 @@ public class SensorHuellaService {
                 puertoSerial.flushIOBuffers(); 
                 puertoSerial.writeBytes(paquete, paquete.length);
                 
-                // Si mandamos un payload grande de huella, damos margen dinámico a la respuesta del buffer
                 int bytesALeer = (instruccion == (byte) 0x12) ? 14 : 12;
                 return leerRespuestaDinamica(bytesALeer); 
             } catch (Exception e) {
@@ -110,6 +133,9 @@ public class SensorHuellaService {
         return null;
     }
 
+    /**
+     * Lector de búfer de entrada con tolerancia a fallos por latencia USB/Serial.
+     */
     private byte[] leerRespuestaDinamica(int bytesEsperados) {
         byte[] buffer = new byte[bytesEsperados];
         int totalLeidos = 0;
@@ -137,6 +163,10 @@ public class SensorHuellaService {
         return null;
     }
 
+    /**
+     * Operación GenImg (0x01). Captura el rastro dactilar en bruto (imagen cruda).
+     * @return true si la captura fue validada matemáticamente por el sensor.
+     */
     public boolean capturarFotoDedo() {
         System.out.println("[BIOMETRÍA] Intentando capturar huella...");
         if (puertoSerial != null && puertoSerial.isOpen()) {
@@ -157,6 +187,11 @@ public class SensorHuellaService {
         return false;
     }
 
+    /**
+     * Operación Img2Tz (0x02). Convierte la imagen cruda a un modelo vectorial de puntos característicos.
+     * @param numeroBuffer Búfer destino (1 o 2).
+     * @return true si la conversión al modelo de minucias fue exitosa.
+     */
     public boolean generarCaracteristicas(int numeroBuffer) {
         byte[] datos = {(byte) numeroBuffer};
         byte[] respuesta = enviarComando((byte) 0x02, datos);
@@ -166,6 +201,10 @@ public class SensorHuellaService {
         return false;
     }
 
+    /**
+     * Operación RegModel (0x05). Fusiona el Búfer 1 y Búfer 2 para generar el modelo final de enrolamiento.
+     * @return true si los búferes eran lo suficientemente similares para fusionarse.
+     */
     public boolean crearModeloHuella() {
         byte[] respuesta = enviarComando((byte) 0x05, null);
         if (respuesta != null && respuesta.length >= 10) {
@@ -174,13 +213,25 @@ public class SensorHuellaService {
         return false;
     }
 
- public String descargarTemplateDesdeSensor() {
+    /**
+     * RUTINA CRÍTICA DE ENROLAMIENTO Y SANITIZACIÓN: Comando UpChar (0x08).
+     * Descarga el modelo dactilar maestro desde la RAM del chip hacia la aplicación Java.
+     * 
+     * * Mecanismo Purificador: El sensor AS608 transmite el modelo masivo fraccionado en paquetes
+     * seriales de 128 bytes. Cada paquete contiene cabeceras, PID, longitud y suma de verificación.
+     * Este método escanea el flujo entrante, ubica la cabecera (0xEF 0x01) de cada fragmento,
+     * salta los identificadores de control y extrae de forma exclusiva los datos puros.
+     * Esto evita que la BD Supabase se contamine con "ruido" de hardware, asegurando un Kiosko funcional.
+     *
+     * @return Cadena hexadecimal limpia conteniendo estrictamente las minucias dactilares. Nulo en caso de falla.
+     */
+    public String descargarTemplateDesdeSensor() {
         try {
             byte[] datos = {(byte) 0x01}; 
             byte[] respuesta = enviarComando((byte) 0x08, datos);
             
             if (respuesta != null && respuesta.length >= 10 && respuesta[9] == 0x00) {
-                // Damos tiempo suficiente para que el sensor mande toda la ráfaga de datos
+                // Holgura de red para permitir la descarga masiva de la cadena de datos
                 Thread.sleep(200);
                 byte[] rawPackets = leerRespuestaDinamica(800); 
                 
@@ -188,25 +239,27 @@ public class SensorHuellaService {
                     StringBuilder hex = new StringBuilder();
                     int i = 0;
                     
-                    // Escaneamos el flujo de bytes buscando las cabeceras de los paquetes
+                    // Ciclo escaner de trama: Detecta y purifica paquetes iterativamente
                     while (i < rawPackets.length - 9) {
+                        // Detección de la firma inicial del hardware (Adder: 0xEF01)
                         if (rawPackets[i] == (byte) 0xEF && rawPackets[i+1] == (byte) 0x01) {
                             
-                            // Calculamos cuánto mide la carga útil de este paquete
+                            // Determinación dinámica de la longitud del fragmento actual
                             int len = ((rawPackets[i+7] & 0xFF) << 8) | (rawPackets[i+8] & 0xFF);
-                            int dataLength = len - 2; // Descartamos los 2 bytes finales de Checksum
+                            int dataLength = len - 2; // Remoción aritmética del Checksum final
                             
-                            // Extraemos y concatenamos estrictamente la huella pura
+                            // Copia selectiva: Concatenación del núcleo del paquete (Payload puro)
                             for (int j = 0; j < dataLength; j++) {
                                 if ((i + 9 + j) < rawPackets.length) {
                                     hex.append(String.format("%02X", rawPackets[i + 9 + j]));
                                 }
                             }
                             
-                            // Brincamos al siguiente paquete: Cabecera (9) + Datos + Checksum (2)
+                            // Salto analítico hacia la cabecera del siguiente paquete
                             i += (9 + dataLength + 2);
                         } else {
-                            i++; // Seguimos buscando si hay ruido
+                            // Descarte de ruido estático en la línea serial
+                            i++; 
                         }
                     }
                     return hex.toString();
@@ -219,14 +272,18 @@ public class SensorHuellaService {
     }
 
     /**
-     * MÓDULO KIOSKO (1:1 MATCH OFICIAL): Compara las características del dedo puesto (Buffer 1)
-     * directamente contra la cadena Hexadecimal de Supabase.
+     * MÓDULO ADMINISTRATIVO (MATCH COMPRIMIDO 0x12).
+     * Transmite una plantilla pura en un solo comando de alta velocidad (MatchTemplate)
+     * para contrastarla contra el CharBuffer 1. Ideal para comprobaciones rápidas de 
+     * enrolamiento donde no se busca la tolerancia extrema a fallos del Kiosko físico.
+     *
+     * @param hexTemplateSupabase Plantilla de la base de datos a contrastar.
+     * @return true si el sensor dictamina coincidencia biométrica válida.
      */
     public boolean verificarDedoContraSupabase(String hexTemplateSupabase) {
         if (hexTemplateSupabase == null || hexTemplateSupabase.length() < 100) return false;
         
         try {
-            // 1. Convertir el String Hex de Supabase a arreglo de bytes puros
             int len = hexTemplateSupabase.length();
             byte[] bytesTemplate = new byte[len / 2];
             for (int i = 0; i < len; i += 2) {
@@ -234,24 +291,23 @@ public class SensorHuellaService {
                                      + Character.digit(hexTemplateSupabase.charAt(i+1), 16));
             }
             
-            // 2. Estructurar el payload del comando 0x12 (Buffer 1 + Bytes del template)
+            // Estructuración del comando 0x12 acoplando el destino (Buffer 1) con la plantilla
             byte[] payloadComando = new byte[1 + bytesTemplate.length];
-            payloadComando[0] = (byte) 0x01; // Contraste contra el Buffer de caracteres 1
+            payloadComando[0] = (byte) 0x01; 
             System.arraycopy(bytesTemplate, 0, payloadComando, 1, bytesTemplate.length);
             
-            // 3. Enviamos la instrucción 0x12 (MatchTemplate)
             byte[] respuesta = enviarComando((byte) 0x12, payloadComando);
             
-            // 4. Analizar la respuesta de control de hardware de forma segura
             if (respuesta != null && respuesta.length >= 10) {
                 byte codigoConfirmacion = respuesta[9];
                 if (codigoConfirmacion == 0x00) {
-                    // El comando responde con éxito y devuelve la puntuación en los bytes siguientes
                     int score = 0;
                     if (respuesta.length >= 12) {
                         score = ((respuesta[10] & 0xFF) << 8) | (respuesta[11] & 0xFF);
                     }
                     System.out.println("[KIOSKO] Match evaluado por hardware. Score obtenido: " + score);
+                    
+                    // Umbral de Seguridad de Falsos Positivos
                     return score >= 35; 
                 } else if (codigoConfirmacion == 0x01) {
                     System.out.println("[KIOSKO] El hardware completó el análisis: Las huellas no coinciden.");
@@ -265,11 +321,14 @@ public class SensorHuellaService {
         return false;
     }
 
+    // --- Métodos marcados para deprecación debido a migración estructural a la Nube ---
+
     @Deprecated
     public boolean cargarTemplateAlSensor(String hexTemplate) { return false; }
 
     @Deprecated
     public int compararBuffers() { return 0; }
 
+    @Deprecated
     public int buscarHuellaEnSensor() { return -1; }
 }

@@ -6,20 +6,28 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.List;
 
 /**
  * VISTA ADMINISTRATIVA PRINCIPAL - INTEGRACIÓN BIOMÉTRICA AS608 Y SUPABASE
  * Capa de presentación (UI) de la Arquitectura Decoupled MVC.
+ * Responsabilidades:
+ * - Proveer la interfaz gráfica para el enrolamiento, gestión y auditoría escolar.
+ * - Gestionar la concurrencia delegando operaciones de hardware (AS608) y red (Supabase) 
+ *   a hilos secundarios (Background Threads) para evitar el bloqueo del Event Dispatch Thread (EDT).
+ * - Renderizar en tiempo real el tráfico de acceso mediante un monitor de sondeo (Polling).
  */
 public class MainAdmin extends JFrame {
     
     private AdminController controlador = new AdminController();
 
     // Paleta de Diseño Institucional Unificada
+    // Centraliza los colores corporativos para facilitar futuras actualizaciones de UI/UX.
     private static final Color AZUL_OBSCURO = new Color(21, 67, 96);   
     private static final Color AZUL_MEDIO = new Color(41, 128, 185);   
     private static final Color FONDO_GRIS_LIGERO = new Color(245, 247, 250); 
@@ -36,19 +44,24 @@ public class MainAdmin extends JFrame {
     private JComboBox<String> cbRol;
     private JTextField txtSalon1, txtMateria1, txtSalon2, txtMateria2, txtSalon3, txtMateria3, txtSalon4, txtMateria4;
 
-    // Monitor en Tiempo Real
+    // Estructuras de Datos Visuales para el Monitor en Tiempo Real
     private JPanel pnlMonitorContenedor;
     private JTable tablaMonitor;
     private DefaultTableModel modeloMonitor;
     private JScrollPane scrollMonitor;
 
-    // Componentes de otras pestañas
+    // Componentes de visualización y filtrado de datos maestros
     private DefaultTableModel modeloAlumnos, modeloHorarioAlumno, modeloFiltroSalon;
     private DefaultTableModel modeloMaestros, modeloHistorialMaestros; 
     private JTable tablaAlumnos, tablaMaestros, tablaFiltro;
     private JTextField txtBuscarSalon, txtBuscarFecha, txtFechaMaestros;
     private JComboBox<String> cbBuscarHora;
 
+    /**
+     * Constructor principal de la interfaz administrativa.
+     * Inicializa los contenedores Swing, aplica las configuraciones de Layout
+     * y arranca el demonio de monitoreo en tiempo real.
+     */
     public MainAdmin() {
         setTitle("Panel Escolar Administrativo - Arquitectura Decoupled MVC");
         setSize(1350, 780); 
@@ -66,12 +79,19 @@ public class MainAdmin extends JFrame {
 
         add(panelPestañas);
 
-        // Temporizador del monitor (Cada 5 segundos para no saturar Supabase)
+        // Hilo de Sondeo (Polling) para el Monitor de Accesos.
+        // Se establece una latencia de 5000 ms (5 segundos) para balancear la frescura 
+        // de los datos visuales sin saturar el Connection Pool de la base de datos Supabase.
         Timer timerIngresoTiempoReal = new Timer(5000, e -> refrescarHistorialMonitorEnVivo());
         timerIngresoTiempoReal.setRepeats(true);
         timerIngresoTiempoReal.start();
     }
 
+    /**
+     * Tarea periódica invocada por el Timer del sistema.
+     * Recupera la ráfaga de transacciones más recientes y actualiza la tabla lateral.
+     * Implementa un diseño de retroalimentación visual (Bordes rojos) si falla la conexión.
+     */
     private void refrescarHistorialMonitorEnVivo() {
         try {
             List<Object[]> logsRecientes = controlador.obtenerUltimos15Ingresos();
@@ -85,21 +105,28 @@ public class MainAdmin extends JFrame {
                         registro[5]  
                     });
                 }
+                
+                // Restablece el borde a su estado operativo (Azul)
                 pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
                     BorderFactory.createLineBorder(AZUL_MEDIO, 1), " MONITOR DE ACCESOS EN LÍNEA ", 
                     0, 0, FUENTE_NEGRITA, AZUL_OBSCURO));
             }
         } catch (Exception ex) {
-            // IMPRESIÓN FORZADA EN CONSOLA PARA DETECTAR EL PROBLEMA DE RED
             System.err.println("=== 🚨 FALLA DE CONEXIÓN EN MONITOR Escolar 🚨 ===");
             ex.printStackTrace();
             
+            // Alerta visual de hardware/red caído
             pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(ROJO_ERROR, 1), " MONITOR - ERROR DE CONEXIÓN ", 
                 0, 0, FUENTE_NEGRITA, ROJO_ERROR));
         }
     }
 
+    /**
+     * Ensambla la pestaña de enrolamiento utilizando GridBagLayout.
+     * Este Layout avanzado permite distribuir los campos de texto y botones en una cuadrícula
+     * dinámica que mantiene sus proporciones independientemente de la resolución del monitor.
+     */
     private void armarPestañaRegistro(JTabbedPane tabs) {
         JPanel panelPrincipal = new JPanel(new GridBagLayout());
         panelPrincipal.setBackground(FONDO_GRIS_LIGERO);
@@ -153,6 +180,7 @@ public class MainAdmin extends JFrame {
         gbcForm.gridx = 0; gbcForm.gridy = 0; gbcForm.weightx = 1.0;
         pnlIzquierdo.add(pnlDatos, gbcForm);
 
+        // Sub-panel de captura de horarios
         JPanel pnlMatriz = new JPanel(new GridBagLayout());
         pnlMatriz.setBackground(Color.WHITE);
         pnlMatriz.setBorder(BorderFactory.createTitledBorder(
@@ -200,6 +228,7 @@ public class MainAdmin extends JFrame {
         gbcMaster.insets = new Insets(10, 10, 10, 5);
         panelPrincipal.add(pnlIzquierdo, gbcMaster);
 
+        // Estructuración del Monitor de Accesos (Lado derecho de la pantalla)
         pnlMonitorContenedor = new JPanel(new BorderLayout());
         pnlMonitorContenedor.setBackground(Color.WHITE);
         pnlMonitorContenedor.setBorder(BorderFactory.createTitledBorder(
@@ -213,6 +242,7 @@ public class MainAdmin extends JFrame {
         tablaMonitor = new JTable(modeloMonitor);
         estilizarTablaGeneral(tablaMonitor);
 
+        // Modificador gráfico de celdas: Aplica colores condicionales (Rojo/Verde) a la columna Estatus
         tablaMonitor.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object val, boolean isSel, boolean hasFoc, int row, int col) {
@@ -246,6 +276,7 @@ public class MainAdmin extends JFrame {
         gbcMaster.insets = new Insets(10, 5, 10, 10);
         panelPrincipal.add(pnlMonitorContenedor, gbcMaster);
 
+        // Bindings de eventos
         btnEscanearHuella.addActionListener(e -> ejecutarEnrolamientoEnSegundoPlano(btnEscanearHuella));
         btnGuardar.addActionListener(e -> accionGuardar());
         tabs.addTab(" Registro", panelPrincipal);
@@ -277,6 +308,7 @@ public class MainAdmin extends JFrame {
         JButton btnEliminar = new JButton("ELIMINAR ALUMNO"); darEstiloBoton(btnEliminar, ROJO_ERROR);
         pnlBotones.add(btnRefrescar); pnlBotones.add(btnEliminar); panel.add(pnlBotones, BorderLayout.SOUTH);
 
+        // Listener reactivo: Actualiza la tabla inferior al seleccionar un alumno
         tablaAlumnos.getSelectionModel().addListSelectionListener(e -> {
             if(!e.getValueIsAdjusting() && tablaAlumnos.getSelectedRow() != -1) {
                 String matriculaSeleccionada = tablaAlumnos.getValueAt(tablaAlumnos.getSelectedRow(), 0).toString();
@@ -347,7 +379,6 @@ public class MainAdmin extends JFrame {
         txtBuscarSalon = new JTextField(8); 
         pnlTop.add(txtBuscarSalon);
         
-        // El ComboBox regresa para filtrar el bloque con los rangos exactos que pediste
         pnlTop.add(new JLabel("Bloque:")); 
         cbBuscarHora = new JComboBox<>(new String[]{"06:30 - 07:10", "07:10 - 07:50", "07:50 - 08:30", "08:30 - 09:10"}); 
         pnlTop.add(cbBuscarHora);
@@ -367,7 +398,6 @@ public class MainAdmin extends JFrame {
         
         panel.add(pnlTop, BorderLayout.NORTH);
 
-        // Se elimina la columna 'Bloque' de la tabla, ya que el filtro la hace redundante
         modeloFiltroSalon = new DefaultTableModel(new String[]{"Matrícula", "Materia", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes"}, 0);
         tablaFiltro = new JTable(modeloFiltroSalon);
         estilizarTablaGeneral(tablaFiltro);
@@ -380,6 +410,9 @@ public class MainAdmin extends JFrame {
         tabs.addTab("Buscador por Salón", panel);
     }
 
+    /**
+     * Puente con el controlador para la generación del pivote semanal.
+     */
     private void accionFiltrarSalonSemanal() {
         try {
             modeloFiltroSalon.setRowCount(0);
@@ -393,6 +426,11 @@ public class MainAdmin extends JFrame {
         }
     }
 
+    /**
+     * Motor nativo de exportación a CSV.
+     * Incorpora inyección de cabecera BOM (Byte Order Mark) en UTF-8 para evitar 
+     * problemas de codificación de caracteres especiales (acentos/eñes) en Microsoft Excel.
+     */
     private void exportarTablaAExcel() {
         if (tablaFiltro.getRowCount() == 0) {
             JOptionPane.showMessageDialog(this, "No hay datos para exportar. Busque un salón primero.", "Aviso", JOptionPane.WARNING_MESSAGE);
@@ -411,7 +449,12 @@ public class MainAdmin extends JFrame {
                 archivoGuardar = new File(archivoGuardar.getAbsolutePath() + ".csv");
             }
 
-            try (PrintWriter pw = new PrintWriter(new FileWriter(archivoGuardar))) {
+            // Uso de OutputStreamWriter forzando StandardCharsets.UTF_8 para integridad de acentos
+            try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(archivoGuardar), StandardCharsets.UTF_8))) {
+                
+                // Inyección del BOM invisible (\ufeff)
+                pw.print('\ufeff');
+
                 StringBuilder sbHeaders = new StringBuilder();
                 for (int i = 0; i < tablaFiltro.getColumnCount(); i++) {
                     sbHeaders.append(tablaFiltro.getColumnName(i));
@@ -438,6 +481,18 @@ public class MainAdmin extends JFrame {
         }
     }
 
+    /**
+     * FLUJO ASÍNCRONO DE ENROLAMIENTO BIOMÉTRICO.
+     * Desacopla la lógica de captura física del hilo principal (EDT).
+     * Secuencia de hardware:
+     * 1. Captura de la primera muestra fotográfica.
+     * 2. Extracción de características hacia el Búfer 1.
+     * 3. Captura de la segunda muestra fotográfica para validación cruzada.
+     * 4. Extracción de características hacia el Búfer 2.
+     * 5. Fusión de ambos búferes en un modelo maestro consolidado.
+     *
+     * @param btnOrigen Referencia al botón UI para deshabilitarlo preventivamente y evitar clicks dobles.
+     */
     private void ejecutarEnrolamientoEnSegundoPlano(JButton btnOrigen) {
         new Thread(() -> {
             btnOrigen.setEnabled(false);
@@ -453,9 +508,10 @@ public class MainAdmin extends JFrame {
                     return;
                 }
                 
+                // Muestreo Fase 1
                 boolean captura1 = false;
                 System.out.println("[BIOMETRÍA] Iniciando bucle de captura 1...");
-                for (int i = 0; i < 60; i++) {
+                for (int i = 0; i < 60; i++) { // Timeout dinámico de ~15 segundos
                     if (sensor.capturarFotoDedo()) {
                         if (sensor.generarCaracteristicas(1)) {
                             captura1 = true;
@@ -473,8 +529,9 @@ public class MainAdmin extends JFrame {
                 
                 txtHuella.setText("¡Retire el dedo!");
                 System.out.println("[BIOMETRÍA] Captura 1 exitosa. Esperando liberación de sensor...");
-                Thread.sleep(2000); 
+                Thread.sleep(2000); // Ventana temporal obligatoria para evitar solapamiento fotográfico
                 
+                // Muestreo Fase 2
                 txtHuella.setText("Coloque el mismo dedo (Vez 2)...");
                 boolean captura2 = false;
                 for (int i = 0; i < 60; i++) {
@@ -493,6 +550,7 @@ public class MainAdmin extends JFrame {
                     return;
                 }
                 
+                // Síntesis y purificación del modelo final
                 txtHuella.setText("Modelando huella...");
                 System.out.println("[BIOMETRÍA] Creando modelo emparejado...");
                 if (sensor.crearModeloHuella()) {
@@ -514,6 +572,8 @@ public class MainAdmin extends JFrame {
                 ex.printStackTrace();
             } finally {
                 try { sensor.desconectar(); } catch(Exception ignored){}
+                
+                // Retorno seguro al Event Dispatch Thread para reactivar los controles gráficos
                 SwingUtilities.invokeLater(() -> {
                     btnOrigen.setText("Escanear");
                     btnOrigen.setEnabled(true);
@@ -522,6 +582,10 @@ public class MainAdmin extends JFrame {
         }).start();
     }
 
+    /**
+     * Mapea los campos de texto del formulario hacia una estructura matricial 
+     * bidimensional y solicita la persistencia al controlador.
+     */
     private void accionGuardar() {
         String[][] bloques = { 
             {"06:30:00", txtSalon1.getText().trim(), txtMateria1.getText().trim()}, 
@@ -532,6 +596,8 @@ public class MainAdmin extends JFrame {
         try {
             controlador.guardarUsuarioYHorarios(txtMatricula.getText().trim(), txtNombre.getText().trim(), cbRol.getSelectedItem().toString(), txtCarrera.getText().trim(), txtHuella.getText().trim(), bloques);
             JOptionPane.showMessageDialog(this, "Matriz escolar sincronizada de forma integral en Supabase.");
+            
+            // Limpieza de UI post-inserción
             txtMatricula.setText(""); txtNombre.setText(""); txtCarrera.setText(""); txtHuella.setText("");
             txtSalon1.setText(""); txtMateria1.setText(""); txtSalon2.setText(""); txtMateria2.setText("");
             txtSalon3.setText(""); txtMateria3.setText(""); txtSalon4.setText(""); txtMateria4.setText("");
@@ -568,6 +634,10 @@ public class MainAdmin extends JFrame {
         }
     }
 
+    /**
+     * Intermediario de validación destructiva. Solicita confirmación explícita
+     * antes de emitir una instrucción DELETE a la base de datos central.
+     */
     private void accionEliminar(JTable tabla, DefaultTableModel modelo) {
         int fila = tabla.getSelectedRow();
         if(fila == -1) {
@@ -584,6 +654,10 @@ public class MainAdmin extends JFrame {
         }
     }
 
+    /**
+     * Motor de diseño universal para botones. Elimina los bordes del sistema operativo (Look&Feel nativo)
+     * para aplicar un renderizado plano (Flat Design).
+     */
     private void darEstiloBoton(JButton boton, Color colorFondo) {
         boton.setBackground(colorFondo); 
         boton.setForeground(Color.WHITE); 
@@ -595,6 +669,10 @@ public class MainAdmin extends JFrame {
         boton.setCursor(new Cursor(Cursor.HAND_CURSOR));
     }
 
+    /**
+     * Inyector de propiedades gráficas para tablas (JTable).
+     * Configura el renderizado de cabeceras oscuras y líneas de división atenuadas.
+     */
     private void estilizarTablaGeneral(JTable tabla) {
         tabla.setFont(FUENTE_SANS);
         tabla.setRowHeight(24);
@@ -619,6 +697,11 @@ public class MainAdmin extends JFrame {
         });
     }
 
+    /**
+     * Hilo principal de ejecución (Main Thread).
+     * Intenta forzar la adopción del tema visual del Sistema Operativo huésped antes 
+     * de despachar la interfaz a la pila gráfica de Java.
+     */
     public static void main(String[] args) { 
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());

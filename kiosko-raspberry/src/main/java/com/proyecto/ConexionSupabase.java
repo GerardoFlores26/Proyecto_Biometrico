@@ -5,7 +5,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 /**
- * CLASE DE CONFIGURACIÓN Y ENLACE DE RED
+ * CLASE DE CONFIGURACIÓN Y ENLACE DE REDd
  * Proporciona el mecanismo de conectividad centralizado entre la aplicación Java 
  * y la base de datos PostgreSQL alojada en la infraestructura de Supabase.
  * Utiliza el estándar JDBC (Java Database Connectivity) para la comunicación.

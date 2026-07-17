@@ -21,7 +21,7 @@ public class ConexionSupabase {
     private static final String PASSWORD = "Los5deITC-2026"; 
 
     /**
-     * Establece y retorna una conexión activa con el servidor de base de datos.
+     * Establece y retorna una conexión activa con el servidor de base de datos.,
      * Este método debe ser invocado dentro de bloques try-with-resources por los 
      * controladores (Controllers) para garantizar el cierre adecuado de los puertos de red.
      *

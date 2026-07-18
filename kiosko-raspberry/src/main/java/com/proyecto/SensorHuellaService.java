@@ -121,6 +121,7 @@ public class SensorHuellaService {
         }
 
         // Cálculo de Checksum aritmético para que el receptor verifique la integridad de la trama
+        // es para que los bytes no se corrompan a viajar por el cable serial
         int suma = (PID_COMANDO & 0xFF) + ((longitudContenido >> 8) & 0xFF) + (longitudContenido & 0xFF) + (instruccion & 0xFF);
         if (datos != null) {
             for (byte b : datos) {

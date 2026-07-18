@@ -46,15 +46,15 @@ public class SensorHuellaService {
         puertoSerial.setComPortTimeouts(SerialPort.TIMEOUT_NONBLOCKING, 0, 0);
 
         if (puertoSerial.openPort()) {
-            System.out.println("✔ Conectado exitosamente al sensor en el puerto: " + nombrePuerto);
+            System.out.println(" Conectado exitosamente al sensor en el puerto: " + nombrePuerto);
             puertoSerial.flushIOBuffers();
             
             verificarContrasena(); 
-            System.out.println("✔ Sincronización del puerto serial forzada para el panel Administrativo.");
+            System.out.println(" Sincronización del puerto serial forzada para el panel Administrativo.");
             return true; 
             
         } else {
-            System.err.println("❌ No se pudo abrir el puerto: " + nombrePuerto);
+            System.err.println(" No se pudo abrir el puerto: " + nombrePuerto);
             return false;
         }
     }
@@ -108,7 +108,7 @@ public class SensorHuellaService {
             System.arraycopy(datos, 0, paquete, pos, datos.length);
             pos += datos.length;
         }
-
+        // se asegura que los bytes no se corrompan por le cable serial
         int suma = (PID_COMANDO & 0xFF) + ((longitudContenido >> 8) & 0xFF) + (longitudContenido & 0xFF) + (instruccion & 0xFF);
         if (datos != null) {
             for (byte b : datos) {
@@ -180,7 +180,7 @@ public class SensorHuellaService {
             byte codigoConfirmacion = respuesta[9];
             System.out.println("[BIOMETRÍA] El sensor respondió código: " + String.format("%02X", codigoConfirmacion));
             if (codigoConfirmacion == 0x00) {
-                System.out.println("✔ ¡Captura exitosa!");
+                System.out.println(" ¡Captura exitosa!");
                 return true;
             }
         }

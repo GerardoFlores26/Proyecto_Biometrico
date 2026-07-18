@@ -453,6 +453,7 @@ public class MainAdmin extends JFrame {
             try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(archivoGuardar), StandardCharsets.UTF_8))) {
                 
                 // Inyección del BOM invisible (\ufeff)
+                //para que el excel pueda leer las palabras con asentos 
                 pw.print('\ufeff');
 
                 StringBuilder sbHeaders = new StringBuilder();

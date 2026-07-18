@@ -108,7 +108,7 @@ public class MainKiosko extends JFrame {
                             Thread.sleep(3500); 
                         }
                     } else {
-                        lblConsejo.setText("❌ Error: No se detecta el lector de huellas en el puerto asignado.");
+                        lblConsejo.setText(" Error: No se detecta el lector de huellas en el puerto asignado.");
                         lblConsejo.setForeground(Color.RED);
                     }
                     Thread.sleep(250); // Frecuencia de muestreo ante estados inactivos

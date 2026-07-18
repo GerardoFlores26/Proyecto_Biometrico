@@ -55,6 +55,7 @@ public class KioskoController {
                 
                 // Si la huella no existe en el mapa, crea la lista y añade el horario. 
                 // Si ya existe, simplemente añade el nuevo bloque horario a la lista existente del alumno.
+                // es paea que el koiosko no tenga latencia al leer huella.
                 cache.computeIfAbsent(huella, k -> new ArrayList<>()).add(datos);
             }
         } catch (Exception e) { 

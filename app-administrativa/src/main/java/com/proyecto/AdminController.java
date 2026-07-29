@@ -214,7 +214,7 @@ public class AdminController {
     public List<Object[]> generarReporteSemanalSalon(String salon, String fechaReferencia, String bloqueSeleccionado) throws Exception {
         List<Object[]> lista = new ArrayList<>();
         
-        // 1. Cálculo Aritmético de Fechas en la JVM para control estricto de la semana escolar
+        // 1. Cálculo Aritmético de Fechas en la JVM
         java.time.LocalDate fechaBase = java.time.LocalDate.parse(fechaReferencia);
         java.time.LocalDate lunes = fechaBase.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
         
@@ -224,13 +224,27 @@ public class AdminController {
         String dJue = lunes.plusDays(3).toString();
         String dVie = lunes.plusDays(4).toString();
         
-        // 2. Consulta Transversal (Pivot) con codificación de símbolos estándar ASCII (* y /)
+        // 2. Subconsulta "Omni-Timezone" blindada contra errores de JDBC y Supabase
+        // Valida el turno matutino y el turno nocturno (+12 hrs) tanto en hora cruda como compensada (-6 hrs).
+        String subQuery = "(SELECT '*' FROM registro_accesos r " +
+                          "WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) " +
+                          "AND TRIM(r.salon_kiosko) = TRIM(h.salon) " +
+                          "AND r.permitido = true " +
+                          "AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE " +
+                          "AND ( " +
+                          "      (r.fecha_hora::TIME >= (h.hora_inicio::TIME - INTERVAL '15 minutes') AND r.fecha_hora::TIME <= (h.hora_inicio::TIME + INTERVAL '45 minutes')) " +
+                          "   OR ((r.fecha_hora - INTERVAL '6 hours')::TIME >= (h.hora_inicio::TIME - INTERVAL '15 minutes') AND (r.fecha_hora - INTERVAL '6 hours')::TIME <= (h.hora_inicio::TIME + INTERVAL '45 minutes')) " +
+                          "   OR (r.fecha_hora::TIME >= (h.hora_inicio::TIME + INTERVAL '11 hours 45 minutes') AND r.fecha_hora::TIME <= (h.hora_inicio::TIME + INTERVAL '12 hours 45 minutes')) " +
+                          "   OR ((r.fecha_hora - INTERVAL '6 hours')::TIME >= (h.hora_inicio::TIME + INTERVAL '11 hours 45 minutes') AND (r.fecha_hora - INTERVAL '6 hours')::TIME <= (h.hora_inicio::TIME + INTERVAL '12 hours 45 minutes')) " +
+                          ") LIMIT 1)";
+
+        // 3. Consulta Transversal (Pivot) limpia
         String sql = "SELECT h.matricula, h.materia, " +
-                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as lun, " +
-                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as mar, " +
-                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as mie, " +
-                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as jue, " +
-                     "  COALESCE((SELECT '*' FROM registro_accesos r WHERE UPPER(TRIM(r.matricula)) = UPPER(TRIM(h.matricula)) AND TRIM(r.salon_kiosko) = TRIM(h.salon) AND r.permitido = true AND (r.fecha_hora - INTERVAL '6 hours')::DATE = ?::DATE LIMIT 1), '/') as vie " +
+                     "  COALESCE(" + subQuery + ", '/') as lun, " +
+                     "  COALESCE(" + subQuery + ", '/') as mar, " +
+                     "  COALESCE(" + subQuery + ", '/') as mie, " +
+                     "  COALESCE(" + subQuery + ", '/') as jue, " +
+                     "  COALESCE(" + subQuery + ", '/') as vie " +
                      "FROM horarios h WHERE TRIM(h.salon) LIKE ? AND CAST(h.hora_inicio AS VARCHAR) LIKE ? " +
                      "ORDER BY h.matricula";
                      
@@ -242,9 +256,10 @@ public class AdminController {
             ps.setString(3, dMie);
             ps.setString(4, dJue);
             ps.setString(5, dVie);
+            
             ps.setString(6, "%" + salon.trim() + "%"); 
             
-            // Extracción de los primeros 5 caracteres de la hora para validación de bloque
+            // Extracción de la hora para validación
             String horaSQL = normalizarHora24(bloqueSeleccionado, "BUSQUEDA").substring(0, 5) + "%";
             ps.setString(7, horaSQL); 
             

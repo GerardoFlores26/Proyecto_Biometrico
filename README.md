@@ -90,10 +90,10 @@ Usuario ➔ Coloca el dedo en el sensor AS608
  ###📦 4. Alcance del Proyecto
 Incluye:
 
--Aplicación de escritorio administrativa multiplataforma.
--Kiosco físico interactivo para validación biométrica.
--Sincronización de registros de asistencia en la nube.
--Extracción purificada de minucias (sin almacenar imágenes físicas de las huellas).
+- Aplicación de escritorio administrativa multiplataforma.
+- Kiosco físico interactivo para validación biométrica.
+- Sincronización de registros de asistencia en la nube.
+- Extracción purificada de minucias (sin almacenar imágenes físicas de las huellas).
 
 No incluye:
 
@@ -107,10 +107,10 @@ Desarrollar e implementar un sistema multiplataforma que automatice y controle e
 
 Objetivos Específicos:
 
--Reducir el tiempo de pase de lista en las aulas a menos de 3 segundos por alumno.
--Erradicar al 100% la suplantación de identidad mediante tecnología dactilar.
--Garantizar la disponibilidad del sistema implementando caché en RAM para que el kiosco funcione sin latencia.
--Generar reportes históricos de asistencia exportables a Excel sin errores de codificación.
+- Reducir el tiempo de pase de lista en las aulas a menos de 3 segundos por alumno.
+- Erradicar al 100% la suplantación de identidad mediante tecnología dactilar.
+- Garantizar la disponibilidad del sistema implementando caché en RAM para que el kiosco funcione sin latencia.
+- Generar reportes históricos de asistencia exportables a Excel sin errores de codificación.
 
 
 ### 👥 6. Usuarios o Actores
@@ -161,17 +161,17 @@ https://github.com/GerardoFlores26/Proyecto_Biometrico
 
 #Autores (Ingeniería en Tecnologías Computacionales):#
 
--Victor Hugo Solano Velazquez — E074
--Gerado Flores Tobias
--Emiliano Jimenez Reyes
--Jose Luiz Razon Leyva
--Mauricio De Jesus Silva Vazquez — E855
+- Victor Hugo Solano Velazquez — E074
+- Gerado Flores Tobias
+- Emiliano Jimenez Reyes
+- Jose Luiz Razon Leyva
+- Mauricio De Jesus Silva Vazquez — E855
 
 #Proyecto Académico:#
 
--Institución: Escuela CNCI (Monterrey, Nuevo León, México)
--Materias Integradas: Programación III, Ingeniería de Software, Desarrollo de Aplicaciones de Integración.
--Docente: Blanca Aracely Aranda Machorro
+- Institución: Escuela CNCI (Monterrey, Nuevo León, México)
+- Materias Integradas: Programación III, Ingeniería de Software, Desarrollo de Aplicaciones de Integración.
+- Docente: Blanca Aracely Aranda Machorro
 
 Fecha: 28 de Junio de 2026
 

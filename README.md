@@ -112,7 +112,6 @@ Objetivos Específicos:
 -Garantizar la disponibilidad del sistema implementando caché en RAM para que el kiosco funcione sin latencia.
 -Generar reportes históricos de asistencia exportables a Excel sin errores de codificación.
 
-### 👥 6. Usuarios o Actores
 
 ### 👥 6. Usuarios o Actores
 
@@ -120,7 +119,8 @@ Objetivos Específicos:
 |---|---|---|
 | Administrador<br>(Control Escolar) | Personal encargado de la gestión académica y del hardware. | CRUD total de usuarios, horarios y huellas. Generación de reportes. |
 | Alumno | Estudiante inscrito en el campus. | Solo lectura/validación biométrica en el kiosco. |
-| Docente | Profesor titular de las materias. | Validación de asistencia en el kiosco y auditorías de sus aulas. |                             |                                                           |                                                            |
+| Docente | Profesor titular de las materias. | Validación de asistencia en el kiosco y auditorías de sus aulas. |                                         
+                                                            
 ###📄 7. Casos de Uso Principales
 - CU01: Enrolamiento Biométrico: El administrador captura los datos del alumno y escanea su huella 2 veces en el sensor AS608 para generar una plantilla       matemática.
 - CU02: Registro de Asistencia: El alumno coloca su dedo en el Kiosco; el sistema valida la huella, revisa el reloj del sistema y marca asistencia, retardo    o falta.

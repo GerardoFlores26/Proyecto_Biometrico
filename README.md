@@ -114,23 +114,23 @@ Objetivos Específicos:
 
 ### 👥 6. Usuarios o Actores
 
-Rol                           |                 Descripción de Permisos                   |                             Principales
-------------------------------|-----------------------------------------------------------|-------------------------------------------------------------
-Administrador                 |             Personal encargado de la                      |                          CRUD total de usuarios
-(Control Escolar)             |             gestión académica y del                       |                          horarios y huellas. Generacion
-                              |             hardware.                                     |                          de reportes
-------------------------------|-----------------------------------------------------------|-------------------------------------------------------------
-                              |                                                           |
-                              |             Estudiante inscrito                           |                          solo lectura/validacion
-Alumno                        |             en el campus                                  |                          biometrica en el kiosco
-                              |                                                           |
-                              |                                                           | 
-------------------------------|-----------------------------------------------------------|-------------------------------------------------------------                                   |                                                           |
-                              |                                                           |
-Docente                       |              Profesor titular                             |                          Validacion de asistencia en el
-                              |              de las materias                              |                          kiosco y auditorias de sus aulas
-------------------------------|-----------------------------------------------------------|------------------------------------------------------------
-
+|Rol                           |                 Descripción de Permisos                   |                             Principales
+|------------------------------|-----------------------------------------------------------|------------------------------------------------------------|
+|    Administrador             |             Personal encargado de la                      |                          CRUD total de usuarios            |
+|    (Control Escolar)         |             gestión académica y del                       |                          horarios y huellas. Generacion    |
+|                              |             hardware.                                     |                          de reportes                       |
+|------------------------------|-----------------------------------------------------------|------------------------------------------------------------|
+|                              |                                                           |                                                            |
+|                              |             Estudiante inscrito                           |                          solo lectura/validacion           |
+|    Alumno                    |             en el campus                                  |                          biometrica en el kiosco           |
+|                              |                                                           |                                                            |
+|                              |                                                           |                                                            |
+|------------------------------|-----------------------------------------------------------|------------------------------------------------------------|    |                              |                                                           |                                                            |
+|                              |                                                           |                                                            |
+|    Docente                   |              Profesor titular                             |                          Validacion de asistencia en el    |
+|                              |              de las materias                              |                          kiosco y auditorias de sus aulas  |
+|------------------------------|-----------------------------------------------------------|------------------------------------------------------------|
+|                              |                                                           |                                                            |
 ###📄 7. Casos de Uso Principales
 - CU01: Enrolamiento Biométrico: El administrador captura los datos del alumno y escanea su huella 2 veces en el sensor AS608 para generar una plantilla       matemática.
 - CU02: Registro de Asistencia: El alumno coloca su dedo en el Kiosco; el sistema valida la huella, revisa el reloj del sistema y marca asistencia, retardo    o falta.

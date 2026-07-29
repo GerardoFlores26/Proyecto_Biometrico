@@ -129,7 +129,7 @@ Alumno                        |             en el campus                        
                               |                                                           |
 Docente                       |              Profesor titular                             |                          Validacion de asistencia en el
                               |              de las materias                              |                          kiosco y auditorias de sus aulas
---------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------|-----------------------------------------------------------|------------------------------------------------------------
 
 ###📄 7. Casos de Uso Principales
 - CU01: Enrolamiento Biométrico: El administrador captura los datos del alumno y escanea su huella 2 veces en el sensor AS608 para generar una plantilla       matemática.

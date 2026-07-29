@@ -115,7 +115,7 @@ Objetivos Específicos:
 ### 👥 6. Usuarios o Actores
 
 |Rol                           |                 Descripción de Permisos                   |                             Principales                    |
---------------------------------------------------------------------------------------------------------------------------------------------------------|
+--------------------------------------------------------------------------------------------------------------------------------------------------------
 |    Administrador             |             Personal encargado de la                      |                          CRUD total de usuarios            |
 |    (Control Escolar)         |             gestión académica y del                       |                          horarios y huellas. Generacion    |
 |                              |             hardware.                                     |                          de reportes                       |

@@ -69,14 +69,19 @@ La arquitectura general está dividida en tres capas:
 
 ### Tecnologías y Hardware Utilizado
 
-| Tecnología / Hardware | Uso en el Sistema |
+## Tecnologías utilizadas
+
+| Tecnología | Uso |
 |---|---|
-| **Java & Java Swing** | Desarrollo de la lógica, multithreading e interfaces gráficas. |
-| **Java JDBC** | Capa de persistencia y comunicación con PostgreSQL. |
-| **PostgreSQL & Supabase** | Sistema gestor de base de datos relacional y alojamiento cloud. |
-| **Raspberry Pi OS & Ubuntu** | Entorno de ejecución para el Kiosco físico. |
-| **Sensor AS608** | Lector óptico para captura biométrica e identificación de minucias. |
-| **Adaptador USB-TTL** | Conexión serial para la comunicación entre Java y el sensor. |
+| Java | Desarrollo de la aplicación y lógica central del sistema |
+| Java Swing / AWT | Desarrollo de interfaces gráficas interactivas |
+| Java JDBC | Controlador nativo para comunicación con PostgreSQL |
+| PostgreSQL | Sistema gestor de base de datos relacional |
+| Supabase | Plataforma de servidor y alojamiento de datos en la nube |
+| Raspberry Pi OS | Sistema operativo del kiosco biométrico |
+| Bash | Automatización del despliegue |
+| jlink | Generación del runtime de Java optimizado |
+| GitHub | Control de versiones y almacenamiento del código fuente |
 
 ### Flujo General de Funcionamiento
 

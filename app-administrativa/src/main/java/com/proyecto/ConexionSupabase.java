@@ -10,14 +10,15 @@ import java.sql.SQLException;
  * y la base de datos PostgreSQL alojada en la infraestructura de Supabase.
  * Utiliza el estándar JDBC (Java Database Connectivity) para la comunicación.
  */
-public class ConexionSupabase {
+public class ConexionSupabase { 
   
     // Cadena de conexión (Connection String) que apunta al servidor remoto en la nube.
-    // Especifica el protocolo (postgresql), el host de Supabase, el puerto seguro (5432) y la base de datos destino.
-    private static final String URL = "jdbc:postgresql://db.sngahtlwvzemqxpwxayl.supabase.co:5432/postgres";
+    // ACTUALIZADO: Usa el Pooler de Supabase (puerto 6543) para saltar bloqueos de red IPv4.
+    private static final String URL = "jdbc:postgresql://aws-1-us-west-2.pooler.supabase.com:6543/postgres";
     
     // Credenciales de autenticación del administrador de la base de datos.
-    private static final String USUARIO = "postgres";
+    // ACTUALIZADO: El usuario para el Pooler debe llevar el ID del proyecto.
+    private static final String USUARIO = "postgres.sngahtlwvzemqxpwxayl";
     private static final String PASSWORD = "Los5deITC-2026"; 
 
     /**

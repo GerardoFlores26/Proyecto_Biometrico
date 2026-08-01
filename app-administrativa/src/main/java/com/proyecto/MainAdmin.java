@@ -122,8 +122,8 @@ public class MainAdmin extends JFrame {
         }
     }
 
-    /**
-     * Ensambla la pestaña de enrolamiento utilizando GridBagLayout.
+    /**este no es
+     * Ensambla la pestaña de enrolamiento utilizando GridBagLayout. 
      * Este Layout avanzado permite distribuir los campos de texto y botones en una cuadrícula
      * dinámica que mantiene sus proporciones independientemente de la resolución del monitor.
      */

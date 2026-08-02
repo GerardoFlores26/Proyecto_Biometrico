@@ -82,8 +82,12 @@ public class MainKiosko extends JFrame {
         // HILO DE RENDIMIENTO ESTABLE (BACKGROUND THREAD DE SONDEO HARWARE)
         // Se ejecuta un bucle infinito en un hilo secundario para evitar congelar el Event Dispatch 
         // Thread (EDT) de Swing durante las lecturas físicas síncronas del puerto serial COM.
+        // HILO DE RENDIMIENTO ESTABLE (BACKGROUND THREAD DE SONDEO HARWARE)
+        // Se ejecuta un bucle infinito en un hilo secundario para evitar congelar el Event Dispatch 
+        // Thread (EDT) de Swing durante las lecturas físicas síncronas del puerto serial COM.
         new Thread(() -> {
-            sensor = new SensorHuellaService("COM7");
+            // RUTA DE LINUX PARA LA RASPBERRY PI
+            sensor = new SensorHuellaService("/dev/ttyUSB0");
 
             while (true) {
                 try {

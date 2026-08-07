@@ -235,10 +235,10 @@ sensor = new SensorHuellaService("COM7");
 
 # opciones a mejorar
 
-- arreglar el problema de desface de horarios de 6 horas
-- para ver las asistencias de maestros es muy tardado en boton puede tener alfuna falla
-- en el area de registo al alumnado agregar todos los dias de la semana para tener el horario por dia no por semana
-- para darle diseño al archivo de excel se puede instalar una librebria llamada apache poi es complicada pero funciona o plantillas usando JXLS
-- agregar turnos pues ahorita nada mas esta el nocturno pero esta la opcion de poner matutino y sabatino tanto en codigo como en en menu de registro poner el turno
-- agregar retardos pues se planeo pero no se implemento
-- opcion para directivos que funcione para todos no solo alumnos y maestros
+- Arreglar el problema de desface de horarios de 6 horas
+- Para ver las asistencias de maestros es muy tardado en boton puede tener alguna falla
+- En el area de registo al alumnado agregar todos los dias de la semana para tener el horario por dia no por semana
+- Para darle diseño al archivo de excel se puede instalar una librebria llamada apache poi es complicada pero funciona o plantillas usando JXLS
+- Agregar turnos pues ahorita nada mas esta el nocturno pero esta la opcion de poner matutino y sabatino tanto en codigo como en en menu de registro poner el turno
+- Agregar retardos pues se planeo pero no se implemento
+- Opcion para directivos que funcione para todos no solo alumnos y maestros
